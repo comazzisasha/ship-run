@@ -1811,7 +1811,7 @@ let saveTimer = 0;
 function saveLevelsSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(saveLevels, 250); }
 
 // --- settings (the Settings button on the menu, plus the editor's own options) ---
-// Kept in this browser only. Editor mode starts off, so visitors to your
+// Kept in this browser only. Dev mode (editorMode) starts off, so visitors to your
 // website only see Play and Practice until they turn it on themselves.
 const SETTINGS_KEY = 'shiprun.settings.v1';
 const SETTING_DEFAULTS = {
@@ -3594,7 +3594,7 @@ function toast(msg) {
 
 // --- the Settings menu ---
 const GAME_SETTINGS = [
-  ['editorMode', 'EDITOR MODE', 'Unlocks the level editor. Until it is on, the editor is hidden and cannot be opened.'],
+  ['editorMode', 'DEV MODE', 'Unlocks the level editor, noclip and hitboxes. Until it is on, they are hidden and cannot be used.'],
   ['showProgress', 'PROGRESS BAR', 'The bar at the top while you play.'],
   ['showPercent', 'PERCENTAGE', 'The number next to the progress bar.'],
   ['showAttempts', 'ATTEMPT COUNTER', 'The "Attempt 3" text at the start of each try.'],
@@ -3634,7 +3634,8 @@ $('modalBody').addEventListener('change', e => {
   settings[c.dataset.set] = c.checked; saveSettings();
   if (c.dataset.set === 'editorMode') {
     $('btnEditor').hidden = !settings.editorMode;
-    toast(settings.editorMode ? 'Editor mode on. The EDITOR button is on the main menu.' : 'Editor mode off. The editor is hidden.');
+    if (!settings.editorMode) { noClip = false; game.showHitboxes = false; }
+    toast(settings.editorMode ? 'Dev mode on. The EDITOR button is on the main menu.' : 'Dev mode off. The editor, noclip and hitboxes are hidden.');
     requestAnimationFrame(() => fitText());
   }
 });
@@ -3643,9 +3644,9 @@ function showHowToPlay() {
   showModal('HOW TO PLAY', `<dl class="keys-list">
       <dt>SPACE / UP / CLICK</dt><dd>Hold to fly up. Let go to fall.</dd>
       <dt>ESC</dt><dd>Pause.</dd>
-      <dt>I</dt><dd>Noclip (Practice and editor tests only).</dd>
+${settings.editorMode ? `      <dt>I</dt><dd>Noclip (Practice and editor tests only).</dd>
       <dt>H</dt><dd>Show hitboxes (Practice and editor tests only).</dd>
-    </dl>
+` : ''}    </dl>
     <p>A run is ${LEVELS_PER_RUN} random levels back to back. Crash once and a new run starts with new levels.</p>`,
     [{ label: 'OK', primary: true, fn: hideModal }]);
 }
@@ -3688,8 +3689,8 @@ window.addEventListener('keydown', e => {
       else if (game.paused) resumeGame();
       else pauseGame();
     }
-    else if (e.code === 'KeyI' && game.mode !== 'run') { noClip = !noClip; updateHud(true); }
-    else if (e.code === 'KeyH' && game.mode !== 'run') game.showHitboxes = !game.showHitboxes;
+    else if (e.code === 'KeyI' && game.mode !== 'run' && settings.editorMode) { noClip = !noClip; updateHud(true); }
+    else if (e.code === 'KeyH' && game.mode !== 'run' && settings.editorMode) game.showHitboxes = !game.showHitboxes;
     return;
   }
   if (screen === 'editor') { edKey(e); return; }

@@ -156,6 +156,7 @@ h1, h2, h3, p { margin: 0; }
 .tile-label { font-family: var(--f-gd); font-size: calc(var(--t) * .14); --ow: calc(var(--t) * .015); line-height: 1; }
 .menu-foot { position: relative; z-index: 1; margin-top: auto; padding: 36px 16px calc(26px + env(safe-area-inset-bottom, 0px)); display: grid; gap: 6px; text-align: center; font: 17px/1.45 var(--f-text); text-shadow: 0 1px 2px rgba(0,0,0,.4); }
 .menu-foot .keys { color: #bfe6ff; }
+.menu-foot .credit { margin: 10px 0 0; font-family: var(--f-gd); font-size: clamp(16px, 3.2vw, 28px); line-height: 1.35; color: #ffe14d; text-shadow: 0 0 0 #000, 2px 2px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 0 4px 6px rgba(0,0,0,.6); overflow-wrap: anywhere; }
 
 /* ---------- pages ---------- */
 .page { overflow: auto; }
@@ -769,6 +770,7 @@ body[data-screen="editor"] .toast { bottom: 250px; }
     <div class="menu-foot">
       <p id="menuNote"></p>
       <p class="keys">Hold Space, Up, the mouse button or your finger to fly. Esc pauses.</p>
+      <p class="credit">Website created by GD Interrobang  :<br>Pretty much everything other than that belongs to RobTop Games.</p>
     </div>
   </section>
 
@@ -782,7 +784,7 @@ body[data-screen="editor"] .toast { bottom: 250px; }
       <h2><span class="gold" data-fit>PRACTICE</span></h2>
     </header>
     <div class="page-body">
-      <p class="page-note">Play one level on its own. Crashing restarts just that level. Press I for noclip and H for hitboxes.</p>
+      <p class="page-note">Play one level on its own. Crashing restarts just that level.</p>
       <div class="gd-list">
         <div class="gd-list-head"><span class="gold">LEVELS</span></div>
         <div id="practiceList"></div>
