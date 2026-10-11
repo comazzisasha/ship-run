@@ -3,6 +3,7 @@
 // To publish new levels, replace this file on your website with a new one from the editor.
 // Each object reads like your CMU code: ["Spike", 10, 2, 180] is Spike(10, 2, 180).
 // Settings in {...} at the end are optional, like keyword arguments: {"color": 5} uses color channel 5.
+//
 window.LEVELS = [
   {
     "id": "bb_start",
