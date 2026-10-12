@@ -1479,6 +1479,24 @@ function sizeCanvas(cv, cssW, cssH) {
 
 const $ = id => document.getElementById(id);
 
+// --- analytics (GoatCounter, loaded in index.html) ---
+// Sends only an event name, never level contents or anything about the player.
+// Skipped on localhost and file:// so testing does not count, and wrapped in
+// try/catch so a blocked or missing GoatCounter can never break the game.
+function track(name) {
+  const host = location.hostname;
+  if (!host || host === 'localhost') return;
+  try {
+    if (window.goatcounter && window.goatcounter.count) window.goatcounter.count({ path: name, title: name, event: true });
+  } catch (e) { /* analytics is optional */ }
+}
+// Passing the end of a level in a run or in Practice (not editor tests or plays)
+function trackLevelDone(pi) {
+  if (game.mode === 'test' || game.returnTo === 'levels') return;
+  const part = world.parts[pi];
+  if (part) track('level-complete:' + part.id);
+}
+
 // --- the Pusab font (used for text drawn on the canvas, like "Attempt 3") ---
 let gdFont = false, fontWarned = false;
 function loadGdFont() {
@@ -1565,7 +1583,7 @@ function playSpecials() {
   }
   // a coin counts once the ship gets past the end of its level alive
   const pi = world.partAt(sx);
-  while (game.coinPart < pi) keepCoins(game.coinPart++);
+  while (game.coinPart < pi) { trackLevelDone(game.coinPart); keepCoins(game.coinPart++); }
 }
 function keepCoins(pi) {
   if (game.mode === 'test' || game.usedNoclip) return;
@@ -1601,7 +1619,7 @@ function onDeath() {
 function onFinish() {
   game.finished = true;
   upInput = false;
-  while (game.coinPart < world.parts.length) keepCoins(game.coinPart++);
+  while (game.coinPart < world.parts.length) { trackLevelDone(game.coinPart); keepCoins(game.coinPart++); }
   if (game.mode === 'test') {
     game.lastTrail = { pts: game.trail, died: false };
     leavePlay('Reached the end of the level.');
@@ -1624,8 +1642,9 @@ function leavePlay(message) {
 
 function startRun() {
   const pool = randomizerPool();
-  if (!pool.length) { toast('No levels are in random runs yet. Turn it on in the level editor.'); return; }
+  if (!pool.length) { toast('No levels are in random runs yet. Turn it on in the level editor.'); return false; }
   startPlay('run', { pool, returnTo: 'menu' });
+  return true;
 }
 
 function pauseGame() {
@@ -2503,6 +2522,7 @@ function toggleEdHitboxes() {
 function edTest(fromHere) {
   const start = fromHere ? Math.max(0, Math.floor(ed.cam.x / gridSize) * gridSize) : 0;
   saveLevels();
+  track('test-level');
   startPlay('test', { level: clone(ed.level), startScroll: start, returnTo: 'editor' });
 }
 
@@ -3531,6 +3551,7 @@ function renderPractice() {
 }
 $('practiceList').addEventListener('click', e => {
   const b = e.target.closest('[data-play]'); if (!b) return;
+  track('practice-start');
   startPlay('practice', { level: levels[Number(b.dataset.play)], returnTo: 'practice' });
 });
 
@@ -3708,9 +3729,9 @@ ${settings.editorMode ? `      <dt>I</dt><dd>Noclip (Practice and editor tests o
 }
 
 // buttons
-$('btnPlay').addEventListener('click', startRun);
+$('btnPlay').addEventListener('click', () => { if (startRun()) track('play-start'); });
 $('btnPractice').addEventListener('click', () => showScreen('practice'));
-$('btnEditor').addEventListener('click', () => showScreen('levels'));
+$('btnEditor').addEventListener('click', () => { track('editor-open'); showScreen('levels'); });
 $('btnHelp').addEventListener('click', showHowToPlay);
 $('btnSettings').addEventListener('click', showGameSettings);
 document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => showScreen(b.dataset.go)));
