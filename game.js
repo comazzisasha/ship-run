@@ -997,19 +997,27 @@ function vGrad(ctx, top, bottom, c1, c2) {
   return gr;
 }
 
-// The Geometry Dash background picture (one size per graphics quality). It is
-// a square that repeats sideways, fills the view's height and is tinted by BG.
+// The Geometry Dash background and ground pictures (one size per graphics
+// quality). The background is a square that repeats sideways, fills the view's
+// height and is tinted by BG. The ground square repeats along the floor (and
+// flipped along the ceiling) and is tinted by GROUND.
 const BG_FILES = { low: 'game_bg_01_001.png', medium: 'game_bg_01_001-hd.png', high: 'game_bg_01_001-uhd.png' };
+const GROUND_FILES = { low: 'groundSquare_01_001.png', medium: 'groundSquare_01_001-hd.png', high: 'groundSquare_01_001-uhd.png' };
 const BG_SPEED = 0.1;            // the background moves at 1/10 of the level's speed
-const BG_IMG = { im: null };
-function loadBackground() {
-  BG_IMG.im = null;
+const GROUND_SIZE = 100;         // one square fills the floor (and ceiling) exactly
+const BG_IMG = { im: null }, GROUND_IMG = { im: null };
+function loadStageImage(slot, files) {
+  slot.im = null;
   if (settings.art !== 'gd') return;
-  const file = BG_FILES[settings.quality] || BG_FILES.medium;
+  const file = files[settings.quality] || files.medium;
   const im = new Image();
-  im.onload = () => { if (BG_IMG.want === file) BG_IMG.im = im; if (typeof edRequestDraw === 'function') edRequestDraw(); };
-  BG_IMG.want = file;
+  im.onload = () => { if (slot.want === file) slot.im = im; if (typeof edRequestDraw === 'function') edRequestDraw(); };
+  slot.want = file;
   im.src = IMAGE_FOLDER + encodeURIComponent(file);
+}
+function loadBackground() {
+  loadStageImage(BG_IMG, BG_FILES);
+  loadStageImage(GROUND_IMG, GROUND_FILES);
 }
 
 // The background takes the BG color (a little darker at the top), the floor and
@@ -1033,16 +1041,37 @@ function drawSky(ctx, w, h, bg = CH_DEFAULT[CH.BG], scroll = 0, size = h) {
 }
 
 function drawStage(ctx, x0, x1, yTop, yBot, ground = CH_DEFAULT[CH.GROUND], line = [255, 255, 255]) {
-  ctx.fillStyle = rgbCss(ground);
-  ctx.fillRect(x0, yTop, x1 - x0, 100 - yTop);
-  ctx.fillRect(x0, 300, x1 - x0, yBot - 300);
-  ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 1;
-  ctx.beginPath();
-  for (let x = Math.floor(x0 / 80) * 80; x <= x1; x += 80) {
-    ctx.moveTo(x, 300); ctx.lineTo(x, yBot);
-    ctx.moveTo(x, yTop); ctx.lineTo(x, 100);
+  const im = settings.art === 'gd' && GROUND_IMG.im;
+  if (im) {
+    // Ground squares in level coordinates, so they move with the level and repeat.
+    // The floor starts at y = 300 going down; the ceiling is the same picture
+    // flipped, starting at y = 100 going up.
+    const g = GROUND_SIZE, sx = Math.floor(x0 / g) * g;
+    for (let y = 300; y < yBot; y += g)
+      for (let x = sx; x < x1; x += g) ctx.drawImage(im, x, y, g + 0.5, g + 0.5);
+    if (yTop < 100) {
+      ctx.save(); ctx.translate(0, 200); ctx.scale(1, -1);   // mirror around y = 100
+      for (let y = 300; y < 200 - yTop; y += g)
+        for (let x = sx; x < x1; x += g) ctx.drawImage(im, x, y, g + 0.5, g + 0.5);
+      ctx.restore();
+    }
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.fillStyle = rgbCss(ground);
+    if (yTop < 100) ctx.fillRect(x0, yTop, x1 - x0, 100 - yTop);
+    if (yBot > 300) ctx.fillRect(x0, 300, x1 - x0, yBot - 300);
+    ctx.globalCompositeOperation = 'source-over';
+  } else {
+    ctx.fillStyle = rgbCss(ground);
+    ctx.fillRect(x0, yTop, x1 - x0, 100 - yTop);
+    ctx.fillRect(x0, 300, x1 - x0, yBot - 300);
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let x = Math.floor(x0 / 80) * 80; x <= x1; x += 80) {
+      ctx.moveTo(x, 300); ctx.lineTo(x, yBot);
+      ctx.moveTo(x, yTop); ctx.lineTo(x, 100);
+    }
+    ctx.stroke();
   }
-  ctx.stroke();
   const gr = ctx.createLinearGradient(x0, 0, x1, 0);
   gr.addColorStop(0, '#000'); gr.addColorStop(0.5, rgbCss(line)); gr.addColorStop(1, '#000');
   ctx.strokeStyle = gr; ctx.lineWidth = 2;
