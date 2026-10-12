@@ -820,6 +820,7 @@ const SPR = { data: window.GD_SPRITES || null, quality: '', sheets: {}, cache: n
 function useSheets() { return !!(SPR.data && SPR.ready && settings.art === 'gd'); }
 function loadSprites() {
   SPR.cache.clear(); TINTS.clear(); SPR.ready = false; SPR.sheets = {};
+  loadBackground();
   if (!SPR.data || settings.art !== 'gd') { imagesChanged(); return; }
   const q = SPR.data.sheets[settings.quality] ? settings.quality : 'medium';
   SPR.quality = q;
@@ -996,10 +997,36 @@ function vGrad(ctx, top, bottom, c1, c2) {
   return gr;
 }
 
+// The Geometry Dash background picture (one size per graphics quality). It is
+// a square that repeats sideways, fills the view's height and is tinted by BG.
+const BG_FILES = { low: 'game_bg_01_001.png', medium: 'game_bg_01_001-hd.png', high: 'game_bg_01_001-uhd.png' };
+const BG_SPEED = 0.1;            // the background moves at 1/10 of the level's speed
+const BG_IMG = { im: null };
+function loadBackground() {
+  BG_IMG.im = null;
+  if (settings.art !== 'gd') return;
+  const file = BG_FILES[settings.quality] || BG_FILES.medium;
+  const im = new Image();
+  im.onload = () => { if (BG_IMG.want === file) BG_IMG.im = im; if (typeof edRequestDraw === 'function') edRequestDraw(); };
+  BG_IMG.want = file;
+  im.src = IMAGE_FOLDER + encodeURIComponent(file);
+}
+
 // The background takes the BG color (a little darker at the top), the floor and
 // ceiling take the GROUND color and their edge line the LINE color.
+// With Geometry Dash art the background picture is drawn instead, moved left by
+// scroll * BG_SPEED (scroll in level pixels, size = how big one picture is drawn).
 const rgbCss = (c, k = 1) => `rgb(${Math.round(c[0] * k)},${Math.round(c[1] * k)},${Math.round(c[2] * k)})`;
-function drawSky(ctx, w, h, bg = CH_DEFAULT[CH.BG]) {
+function drawSky(ctx, w, h, bg = CH_DEFAULT[CH.BG], scroll = 0, size = h) {
+  const im = settings.art === 'gd' && BG_IMG.im;
+  if (im && size > 0) {
+    const off = ((scroll * BG_SPEED * size / 400) % size + size) % size;
+    for (let x = -off; x < w; x += size) ctx.drawImage(im, x, h - size, size + 0.5, size);
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.fillStyle = rgbCss(bg); ctx.fillRect(0, 0, w, h);
+    ctx.globalCompositeOperation = 'source-over';
+    return;
+  }
   const d = CH_DEFAULT[CH.BG], plain = bg.every((v, i) => Math.round(v) === d[i]);
   ctx.fillStyle = plain ? vGrad(ctx, 0, h, '#5784dd', '#6f9df2') : vGrad(ctx, 0, h, rgbCss(bg, 0.86), rgbCss(bg));
   ctx.fillRect(0, 0, w, h);
@@ -1670,11 +1697,11 @@ function drawGame() {
   DRAW.parts = world.parts; DRAW.now = now; DRAW.play = true; DRAW.coinTime = performance.now() / 1000;
   const st = stageColors(sI, now);
 
-  ctx.setTransform(k, 0, 0, k, 0, 0);
-  drawSky(ctx, VIEW_WIDTH, 400, st.bg);
   // The camera only changes where things are drawn. The ship is still at
   // shipCenterX + scrollX in the level, exactly like CMU.
   const camL = sI + shipCenterX - SHIP_SCREEN_X;
+  ctx.setTransform(k, 0, 0, k, 0, 0);
+  drawSky(ctx, VIEW_WIDTH, 400, st.bg, camL);
   ctx.setTransform(k, 0, 0, k, -camL * k, 0);
   drawStage(ctx, camL, camL + VIEW_WIDTH, 0, 400, st.ground, st.line);
   if (gdFont && settings.showAttempts && game.attemptX > camL - 200) {
@@ -2459,7 +2486,7 @@ function drawEditor() {
   DRAW.parts = null; DRAW.cs = ed.cs; DRAW.now = 0; DRAW.play = false;
   const sc = id => { const v = ed.cs.resolve(id, 0); return [v.r, v.g, v.b]; };
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  drawSky(ctx, W, H, sc(CH.BG));
+  drawSky(ctx, W, H, sc(CH.BG), c.x, Math.max(H, 400 * c.scale));
   ctx.setTransform(k, 0, 0, k, -c.x * k, -c.y * k);
   drawStage(ctx, x0, x1, y0, y1, sc(CH.GROUND), sc(CH.LINE));
 
