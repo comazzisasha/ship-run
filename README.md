@@ -8,7 +8,7 @@ Visitor numbers are collected with [GoatCounter](https://www.goatcounter.com),
 a privacy-friendly analytics service: no cookies, and no personal data such as
 names, IP addresses or level contents is stored.
 
-See the stats at **https://YOUR_CODE.goatcounter.com**.
+See the stats at **https://thesashanator.goatcounter.com**.
 
 Besides normal page views, the game sends these events:
 
