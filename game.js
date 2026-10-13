@@ -68,6 +68,7 @@ const miniMaxVy = 9.41 * 60 * pxPerUnit;
 const miniScale = 0.6;
 const shipCenterX = 150 + gridSize / 2;
 const epsilon = 0.001;
+const landSnap = 0.2 * gridSize;    // landing help: how close (above or just inside) a block top counts as landing on it
 const screenHeight = 400;
 let scrollX = 0;
 const sawSpin = 1;
@@ -616,6 +617,30 @@ class Player {
           this.y -= b.b - s.t; this.vy = 0; this.onGround = true;
         }
         this.syncHitbox();
+      }
+    }
+
+    // Landing help: when not flying up, a ship whose bottom is within landSnap of a block's top
+    // (a little above it, or clipping its corner a little) lands on it. Upside down, the same
+    // for a block's underside. Makes platforms easier to land on.
+    if (!upInput && !this.onGround) {
+      const s = this.hitboxAt(sx);
+      let best = null, bestGap = Infinity;
+      for (const block of near) {
+        if (block.kind !== 'solid') continue;
+        const b = block.box;
+        if (s.r <= b.l || s.l >= b.r) continue;
+        const gap = this.gravity === 1 ? b.t - s.b : s.t - b.b;   // > 0: just above it, < 0: a little inside it
+        if (Math.abs(gap) <= landSnap && Math.abs(gap) < Math.abs(bestGap)) { best = block; bestGap = gap; }
+      }
+      if (best) {
+        const oldY = this.y;
+        this.y += this.gravity === 1 ? -bestGap : bestGap;
+        this.syncHitbox();
+        const t = this.hitboxAt(sx);   // never snap into another block (tight corridors)
+        if (near.some(o => o.kind === 'solid' && t.r > o.box.l && t.l < o.box.r && t.b > o.box.t + epsilon && t.t < o.box.b - epsilon)) {
+          this.y = oldY; this.syncHitbox();
+        } else { this.vy = 0; this.onGround = true; }
       }
     }
 
