@@ -1955,6 +1955,7 @@ const SETTING_DEFAULTS = {
   edHitboxes: false, edGrid: true, edInfo: true, edTrail: true, edCoords: true, edWarnings: true,
   swipe: true, freeMove: true, snap: true,
   art: 'gd', quality: 'medium',
+  seenWarning: false,               // the photosensitivity warning was shown and accepted
 };
 const settings = loadSettings();
 function loadSettings() {
@@ -4254,8 +4255,8 @@ function renderPractice() {
 }
 $('practiceList').addEventListener('click', e => {
   const b = e.target.closest('[data-play]'); if (!b) return;
-  track('practice-start');
-  startPlay('practice', { level: levels[Number(b.dataset.play)], returnTo: 'practice' });
+  const L = levels[Number(b.dataset.play)];
+  afterWarning(() => { track('practice-start'); startPlay('practice', { level: L, returnTo: 'practice' }); });
 });
 
 function renderLevelList() {
@@ -4451,8 +4452,22 @@ ${settings.editorMode ? `      <dt>I</dt><dd>Noclip (Practice and editor tests o
     [{ label: 'OK', primary: true, fn: hideModal }]);
 }
 
+// The photosensitivity warning: shown the first time someone starts playing, then
+// remembered with the other settings. Closing it without accepting doesn't start the game.
+function afterWarning(go) {
+  if (settings.seenWarning) { go(); return; }
+  showModal('WARNING', `<p><b>Photosensitivity warning.</b> Ship Run has flashing and changing colours, fast movement and
+      repeating patterns. A very small number of people may have a seizure when they see these, even with no history of
+      epilepsy. If you or anyone in your family has had seizures, talk to a doctor before playing.</p>
+    <p>Stop playing straight away if you feel dizzy or sick, see blurred vision, or have eye or muscle twitches.
+      Play in a well-lit room and take regular breaks.</p>
+    <p class="small"><a href="terms.html" target="_blank" rel="noopener">Read the full warning in the Terms of Use</a></p>`,
+    [{ label: 'BACK', fn: hideModal },
+     { label: 'I UNDERSTAND', primary: true, fn: () => { settings.seenWarning = true; saveSettings(); hideModal(); go(); } }]);
+}
+
 // buttons
-$('btnPlay').addEventListener('click', () => { if (startRun()) track('play-start'); });
+$('btnPlay').addEventListener('click', () => afterWarning(() => { if (startRun()) track('play-start'); }));
 $('btnPractice').addEventListener('click', () => showScreen('practice'));
 $('btnEditor').addEventListener('click', () => { track('editor-open'); showScreen('levels'); });
 $('btnHelp').addEventListener('click', showHowToPlay);
