@@ -321,7 +321,7 @@ const SPIKE_LOOKS = {
 };
 // Thorn pits: how far the picture's middle sits above the bottom of its square (tall bushes stand up)
 const PIT_LOOKS = { pit_02: 0, pit_03: 0, pit_04: 0, pit_04_02: 0, pit_04_03: 0, pit_04_low: 0, pit_05: 0, pit_05_02: 0, pit_05_03: 0,
-  pit_06: 0, pit_06_2: 0, pit_07: 0, pit_b_01: 0.775, pit_b_02: 0.967, pit_b_03: 0.775, pit_b_04: 0.458 };
+  pit_06: 0, pit_06_2: 0, pit_07: 0, pit_b_01: -0.225, pit_b_02: -0.033, pit_b_03: -0.225, pit_b_04: -0.542 };
 // Saws: r = hitbox radius at 1x (the main saw is 1), join = how the stored piece
 // is put together, ch = default color, det = the color layer (and how it joins), halo = soft white edge
 const SAW_LOOKS = {
@@ -1089,7 +1089,7 @@ function drawStage(ctx, x0, x1, yTop, yBot, ground = CH_DEFAULT[CH.GROUND], line
       for (let x = sx; x < x1; x += g) ctx.drawImage(im, x, y, g + 0.5, g + 0.5);
     if (yTop < 100) {
       ctx.save(); ctx.translate(0, 200); ctx.scale(1, -1);   // mirror around y = 100
-      for (let y = 300; y < 200 - yTop; y += g)
+      for (let y = 100; y < 200 - yTop; y += g)
         for (let x = sx; x < x1; x += g) ctx.drawImage(im, x, y, g + 0.5, g + 0.5);
       ctx.restore();
     }
@@ -2253,7 +2253,7 @@ function objBounds(o) {
     const hw = (turned ? o.sh : o.sw) / 2, hh = (turned ? o.sw : o.sh) / 2, cx = o.px, cy = o.py;
     return { x0: cx - Math.max(hw, 3), y0: cy - Math.max(hh, 3), x1: cx + Math.max(hw, 3), y1: cy + Math.max(hh, 3) };
   }
-  if (o.t === 'ThornPit' && o.design && PIT_LOOKS[o.design] > 0) {     // tall thorn bushes
+  if (o.t === 'ThornPit' && o.design && o.design.startsWith('pit_b')) {     // tall thorn bushes
     const f = SPR.data && SPR.data.frames.medium[o.design + '_001'];
     if (f) { const hw = f[6] / 120 * g, hh = f[7] / 120 * g; return { x0: o.imgX - hw, y0: o.imgY - hh, x1: o.imgX + hw, y1: o.imgY + hh }; }
   }
@@ -3027,6 +3027,7 @@ function openColorPop(opt) {
 }
 function closeColorPop() {
   if ($('colorPop').hidden) return;
+  cpMenu(false);
   $('colorPop').hidden = true;
   if (snapshot() !== cp.snap) { ed.undo.push(cp.snap); if (ed.undo.length > 200) ed.undo.shift(); ed.redo = []; }
   edChanged(); edRenderUI();
@@ -3056,6 +3057,9 @@ function cpWrite() {
   }
   edRebuild(); edRequestDraw();
 }
+// The level's own channels a color trigger can change besides 1-999 (in the + menu next to COLOR ID)
+const CP_NAMED = [CH.BG, CH.GROUND, CH.LINE, CH.OBJ];
+function cpMenu(open) { $('cpMenu').hidden = !open; $('cpPlus').setAttribute('aria-expanded', String(open)); }
 function cpSetChannel(id) {
   id = chId(id);
   if (!id) { cpRender(); return; }
@@ -3088,6 +3092,7 @@ function cpRender() {
   $('cpFadeBox').hidden = !trig; $('cpTrig').hidden = !trig;
   if (trig) { $('cpFade').value = Math.min(10, cp.fade); if (document.activeElement !== $('cpFadeNum')) $('cpFadeNum').value = cp.fade; $('cpTouch').checked = cp.touch; $('cpSpawn').checked = cp.spawn; }
   if (document.activeElement !== $('cpId')) $('cpId').value = chLabel(cp.id);
+  for (const nb of document.querySelectorAll('#cpMenu [data-cpnamed]')) nb.setAttribute('aria-pressed', String(Number(nb.dataset.cpnamed) === cp.id));
   const c = ed.cs.resolve(cp.id, 0);
   $('cpIdName').innerHTML = `<span class="ch-sw" style="background:${cssOf(c)}"></span>${trig ? 'CHANGES' : 'EDITING'} ${CH_NAME[cp.id] ? chLabel(cp.id) : 'CHANNEL ' + cp.id}`;
   $('cpPaste').disabled = !cpClip;
@@ -3212,11 +3217,20 @@ $('colorPop').addEventListener('change', e => {
 });
 $('colorPop').addEventListener('click', e => {
   if (e.target.id === 'colorPop') { closeColorPop(); return; }
-  const b = e.target.closest('button'); if (!b) return;
-  const step = (id, dir) => { let n = id >= 1 && id <= 999 ? id + dir : dir > 0 ? 1 : 999; return n < 1 ? 999 : n > 999 ? 1 : n; };
+  const b = e.target.closest('button');
+  if (!b || b.id !== 'cpPlus') cpMenu(false);     // any other click closes the + menu
+  if (!b) return;
+  const step = (id, dir) => {
+    const at = CP_NAMED.indexOf(id);
+    if (at >= 0) { const k = at + dir; return k < 0 ? 999 : k >= CP_NAMED.length ? 1 : CP_NAMED[k]; }
+    const n = id >= 1 && id <= 999 ? id + dir : dir > 0 ? 1 : 999;
+    return n < 1 ? CP_NAMED[CP_NAMED.length - 1] : n > 999 ? CP_NAMED[0] : n;
+  };
   if (b.dataset.cpid) cpSetChannel(step(cp.id, Number(b.dataset.cpid)));
+  else if (b.dataset.cpnamed) cpSetChannel(Number(b.dataset.cpnamed));
+  else if (b.hasAttribute('data-cpfree')) cpSetChannel(nextFreeChannel());
   else if (b.dataset.cpcopy) { cp.spec.copy = step(cp.spec.copy, Number(b.dataset.cpcopy)); if (cp.spec.copy === cp.id) cp.spec.copy = step(cp.spec.copy, Number(b.dataset.cpcopy)); cpWrite(); cpRender(); }
-  else if (b.id === 'cpPlus') cpSetChannel(nextFreeChannel());
+  else if (b.id === 'cpPlus') cpMenu($('cpMenu').hidden);
   else if (b.id === 'cpOk') closeColorPop();
   else if (b.id === 'cpCopyBtn') { cpClip = { spec: cloneSpec(cp.spec), fade: cp.fade }; toast('Color copied.'); cpRender(); }
   else if (b.id === 'cpPaste' && cpClip) { cp.spec = cloneSpec(cpClip.spec); if (cp.mode === 'trigger') cp.fade = cpClip.fade; cp.hue = rgbToHsv(cp.spec.rgb)[0]; cpWrite(); cpRender(); }
@@ -4493,7 +4507,7 @@ $('edScroll').addEventListener('change', e => e.target.blur());
 
 // input for flying (your onKeyPress / onKeyRelease / onMousePress / onMouseRelease)
 window.addEventListener('keydown', e => {
-  if (!$('colorPop').hidden) { if (e.key === 'Escape') closeColorPop(); return; }
+  if (!$('colorPop').hidden) { if (e.key === 'Escape') { if (!$('cpMenu').hidden) cpMenu(false); else closeColorPop(); } return; }
   if (!$('modal').hidden) { if (e.key === 'Escape') hideModal(); return; }
   if (!$('egPop').hidden) { if (e.key === 'Escape') closeEditGroup(); return; }
   if (!$('eoPop').hidden) { if (e.key === 'Escape') eoBack(); return; }
