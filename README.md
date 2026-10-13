@@ -33,7 +33,8 @@ The analytics code is the `track()` helper near the top of section 8 of
 
 The ICONS button on the main menu opens an icon kit for picking your cube, ship
 and colors. It is based on [GDBrowser's Online Icon Kit](https://gdbrowser.com/iconkit/)
-by GD Colon. Your choice is saved in your browser.
+by GD Colon. Your choice is saved in your browser. The default is like Geometry
+Dash's: cube 1 and ship 1 in lime green and cyan.
 
 The icons come from, in this order:
 

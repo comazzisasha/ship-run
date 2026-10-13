@@ -28,10 +28,6 @@ const SHIP_SCREEN_X = Math.round(VIEW_WIDTH / 3);   // where the middle of the s
 // these names. A picture that is missing is drawn with simple shapes instead.
 const IMAGE_FOLDER = '';       // or 'images/' if you keep them in a folder called images
 const IMAGES = {
-  ship:          'ship.png',
-  shipFlipped:   'ship_flipped.png',
-  cube:          'cube.png',
-  cubeFlipped:   'cube_flipped.png',
   gridBlock:     'GridBlock.png',
   orb:           'Orb.png',
   pad:           'Pad.png',
@@ -78,7 +74,6 @@ const velUnit = 60 * pxPerUnit;
 // so this changes nothing for every other object.
 const nearRange = 3 * gridSize;
 let pressed = false;
-const scale = 0.3;               // icon tuning, "scale" in CMU
 
 const speed_lookup = { half: 8.4, normal: 10.4, double: 12.9, triple: 15.6, quad: 19.2 };
 let currentSpeed = speed_lookup[initialSpeed];
@@ -1494,7 +1489,7 @@ function drawPortalFronts(ctx, list) {
 // in the icons folder (ship_05-uhd.png + ship_05-uhd.plist, exactly as they are in
 // the game's Resources/icons folder). Icons that aren't there come from
 // GJ_GameSheetIcons.png instead (icons.js says where each one sits on it).
-// Icon 0 is Ship Run's own picture (cube.png / ship.png), which is the default.
+// The default is like Geometry Dash's: cube 1 and ship 1 in lime green and cyan.
 // The icon kit is based on GDBrowser's icon kit by GD Colon (gdbrowser.com).
 const ICON_FOLDER = 'icons/';
 const ICON_FORMS = { cube: { gd: 'player', max: 485 }, ship: { gd: 'ship', max: 169 } };
@@ -1641,21 +1636,20 @@ function iconArt(form, id, look) {
 }
 // What the player looks like: { cube, ship, col1, col2, glow, glowCol }, kept in this browser
 const KIT_KEY = 'shiprun.icons.v1';
-const KIT_DEFAULTS = { cube: 0, ship: 0, col1: 0, col2: 3, glow: false, glowCol: 3, colW: 12 };
+const KIT_DEFAULTS = { cube: 1, ship: 1, col1: 0, col2: 3, glow: false, glowCol: 3, colW: 12 };   // colors 0 and 3: lime green and cyan
 const kit = (() => {
   const k = { ...KIT_DEFAULTS };
   try {
     const d = JSON.parse(localStorage.getItem(KIT_KEY) || '{}');
-    k.cube = intIn(d.cube, 0, ICON_FORMS.cube.max, 0); k.ship = intIn(d.ship, 0, ICON_FORMS.ship.max, 0);
+    k.cube = intIn(d.cube, 1, ICON_FORMS.cube.max, 1); k.ship = intIn(d.ship, 1, ICON_FORMS.ship.max, 1);   // 0 was Ship Run's old picture
     for (const c of ['col1', 'col2', 'glowCol', 'colW']) k[c] = intIn(d[c], 0, PLAYER_COLORS.length - 1, KIT_DEFAULTS[c]);
     k.glow = !!d.glow;
   } catch (e) { /* storage blocked: defaults */ }
   return k;
 })();
 function saveKit() { try { localStorage.setItem(KIT_KEY, JSON.stringify(kit)); } catch (e) { /* ignore */ } }
-// The picked cube or ship, or null for Ship Run's own picture (or while it loads).
-// A picked icon is used whatever the ART setting is: picking it is the choice.
-function kitArt(form, look = kit) { return look[form] ? iconArt(form, look[form], look) : null; }
+// The picked cube or ship, or null while it loads. Used whatever the ART setting is.
+function kitArt(form, look = kit) { return iconArt(form, look[form], look); }
 let iconsTimer = 0;
 function iconsChanged() {
   clearTimeout(iconsTimer);
@@ -1669,11 +1663,11 @@ function drawPlayer(ctx, worldX, y, theta, s, grav, holding, opt = {}) {
   const hbCY = (screenHeight - y) - hbSize / 2;
   const flip = grav === -1;
 
-  // Icons from the icon kit are drawn at Geometry Dash's size, with the cube sitting
-  // in the ship like in Geometry Dash (Ship Run's own pictures are a bit bigger)
+  // The icons from the icon kit, at Geometry Dash's size, with the cube sitting in the
+  // ship like in Geometry Dash. Until an icon has loaded, simple shapes stand in for it.
   const look = opt.look || kit, cubeArt = kitArt('cube', look), shipArt = kitArt('ship', look);
-  const shipDown = (shipArt ? KIT_SHIP_DOWN * gridSize : 5) * s * grav;
-  const dx = 0, dy = -(shipArt ? KIT_CUBE_UP * gridSize : 10) * s * grav;
+  const shipDown = KIT_SHIP_DOWN * gridSize * s * grav;
+  const dx = 0, dy = -KIT_CUBE_UP * gridSize * s * grav;
   const rX = dx * Math.cos(theta) - dy * Math.sin(theta);
   const rY = -dx * Math.sin(theta) + dy * Math.cos(theta);
 
@@ -1681,12 +1675,10 @@ function drawPlayer(ctx, worldX, y, theta, s, grav, holding, opt = {}) {
   ctx.save();
   ctx.translate(worldX + rX, hbCY + rY + shipDown);
   ctx.rotate(theta);
-  const cubeImg = flip ? (IMG.cubeFlipped || IMG.cube) : IMG.cube;
-  if (flip && (cubeArt || !IMG.cubeFlipped)) ctx.scale(1, -1);
+  if (flip) ctx.scale(1, -1);
   if (cubeArt) drawCentered(ctx, cubeArt, gridSize / cubeArt.ppb * KIT_CUBE_SCALE * s);
-  else if (cubeImg) ctx.drawImage(cubeImg, -110 * scale * s / 2, -60 * scale * s / 2, 110 * scale * s, 60 * scale * s);
   else {
-    const c = 12 * s;
+    const c = gridSize * KIT_CUBE_SCALE * s;
     ctx.fillStyle = COLORS.shipMain; ctx.fillRect(-c / 2, -c / 2, c, c);
     ctx.fillStyle = COLORS.shipTrim; ctx.fillRect(-c / 4, -c / 4, c / 2, c / 2);
     ctx.strokeStyle = '#000'; ctx.lineWidth = 1.2; ctx.strokeRect(-c / 2, -c / 2, c, c);
@@ -1697,12 +1689,10 @@ function drawPlayer(ctx, worldX, y, theta, s, grav, holding, opt = {}) {
   ctx.save();
   ctx.translate(worldX, hbCY + shipDown);
   ctx.rotate(theta);
-  const shipImg = flip ? (IMG.shipFlipped || IMG.ship) : IMG.ship;
-  if (flip && (shipArt || !IMG.shipFlipped)) ctx.scale(1, -1);
+  if (flip) ctx.scale(1, -1);
   if (shipArt) drawCentered(ctx, shipArt, gridSize / shipArt.ppb * s);
-  else if (shipImg) ctx.drawImage(shipImg, -75 * 0.5 * s / 2, -40 * 0.5 * s / 2, 75 * 0.5 * s, 40 * 0.5 * s);
   else {
-    ctx.scale(s, s);
+    ctx.scale(s * 0.66, s * 0.66);
     if (holding) {
       ctx.beginPath(); ctx.moveTo(-18, 1.5); ctx.lineTo(-27 - Math.random() * 3, 5); ctx.lineTo(-18, 8.5); ctx.closePath();
       ctx.fillStyle = '#ffb02e'; ctx.fill();
@@ -4867,7 +4857,7 @@ function placeToast() {
 
 // --- the icon kit: pick your cube, ship and colors ---
 // Looks and works like GDBrowser's Online Icon Kit by GD Colon (gdbrowser.com).
-// Icon 0 is Ship Run's own picture. The list shows every icon in gray and white,
+// The list shows every icon in gray and white,
 // like Geometry Dash's garage; the big one at the top is in your colors.
 const kitUI = { tab: 'ship', slot: 'col1', colors: false, built: '', seen: new Set(), observer: null };
 const KIT_GRID_LOOK = { col1: 17, col2: 12, glow: false, glowCol: 0, colW: 12 };
@@ -4903,19 +4893,15 @@ function drawKitPlayer(ctx, cx, cy, b, look = kit) {
 function drawKitIcon(ctx, form, cx, cy, b, look = kit) {
   ctx.save(); ctx.translate(cx, cy);
   const art = kitArt(form, look);
-  let ok = true;
   if (art) drawCentered(ctx, art, b / art.ppb);
-  else if (look[form]) ok = false;
-  else if (form === 'cube' && IMG.cube) drawCentered(ctx, IMG.cube, b * 0.77 / 554);   // cube.png: the cube is 554 pixels wide
-  else if (form === 'ship' && IMG.ship) drawCentered(ctx, IMG.ship, b * 1.875 / IMG.ship.width);
   ctx.restore();
-  return ok;
+  return !!art;
 }
 function drawKitTileArt(btn) {
   const c = btn.querySelector('canvas'), form = kitUI.tab, id = Number(btn.dataset.icon);
   const [W, H] = sizeCanvasToBox(c);
   drawKitIcon(c.getContext('2d'), form, W / 2, H / 2, Math.min(H * 0.62, W * (form === 'ship' ? 0.5 : 0.7)), { ...KIT_GRID_LOOK, [form]: id });
-  if (id && iconMissing(form, id)) { btn.hidden = true; kitUI.seen.delete(btn); }
+  if (iconMissing(form, id)) { btn.hidden = true; kitUI.seen.delete(btn); }
 }
 function renderKitGrid() {
   const grid = $('kitGrid'), form = kitUI.tab, n = kitCount(form), key = form + n + settings.quality;
@@ -4925,8 +4911,8 @@ function renderKitGrid() {
     kitUI.seen.clear();
     const kind = form === 'cube' ? 'Cube' : 'Ship';
     let html = '';
-    for (let id = 0; id <= n; id++) {
-      html += `<button type="button" class="kit-icon" data-icon="${id}" title="${id ? kind + ' ' + id : 'Ship Run\'s own ' + form}" aria-label="${id ? kind + ' ' + id : 'Ship Run\'s own ' + form}"><canvas></canvas>${id ? '' : '<span class="kit-def o">DEFAULT</span>'}</button>`;
+    for (let id = 1; id <= n; id++) {
+      html += `<button type="button" class="kit-icon" data-icon="${id}" title="${kind} ${id}" aria-label="${kind} ${id}"><canvas></canvas></button>`;
     }
     grid.innerHTML = html;
     grid.scrollTop = 0;
@@ -4962,14 +4948,11 @@ function renderKitColors() {
 }
 function renderKitInfo() {
   const form = kitUI.tab, id = kit[form], hex = i => PLAYER_COLORS[i];
-  const lines = [`ID: ${id ? (form === 'cube' ? 'Cube ' : 'Ship ') + id : 'Ship Run ' + form}`];
-  if (id) {
-    lines.push(`Col 1: ${kit.col1} (${hex(kit.col1)})`, `Col 2: ${kit.col2} (${hex(kit.col2)})`);
-    if (kit.glow && kitGlowOk()) lines.push(`Glow: ${kit.glowCol} (${hex(kit.glowCol)})`);
-    if (kit.colW !== 12) lines.push(`White: ${kit.colW} (${hex(kit.colW)})`);
-    const src = iconSource(form, id);
-    if (src && src.from) lines.push(`Art: ${src.from}`);
-  }
+  const lines = [`ID: ${form === 'cube' ? 'Cube' : 'Ship'} ${id}`, `Col 1: ${kit.col1} (${hex(kit.col1)})`, `Col 2: ${kit.col2} (${hex(kit.col2)})`];
+  if (kit.glow && kitGlowOk()) lines.push(`Glow: ${kit.glowCol} (${hex(kit.glowCol)})`);
+  if (kit.colW !== 12) lines.push(`White: ${kit.colW} (${hex(kit.colW)})`);
+  const src = iconSource(form, id);
+  if (src && src.from) lines.push(`Art: ${src.from}`);
   $('kitInfo').innerHTML = lines.map(l => `<div>${esc(l)}</div>`).join('');
 }
 function renderKitPreview() {
@@ -5001,7 +4984,7 @@ function renderKitTile() {
   const c = $('kitTileIcon');
   if (!c || !c.getClientRects().length) return;
   const [W, H] = sizeCanvasToBox(c);
-  drawKitPlayer(c.getContext('2d'), W / 2, H * 0.52, W / (kit.ship ? 1.5 : 2));
+  drawKitPlayer(c.getContext('2d'), W / 2, H * 0.52, W / 1.5);
 }
 function kitChanged() { saveKit(); renderKit(); renderKitTile(); }
 function openKit() {
@@ -5043,7 +5026,7 @@ function kitDownload() {
     if (!blob) { toast('Could not make the picture.'); return; }
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `shiprun-${form}-${kit[form] || 'default'}.png`;
+    a.download = `shiprun-${form}-${kit[form]}.png`;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   }, 'image/png');
@@ -5061,7 +5044,7 @@ $('kitColors').addEventListener('click', e => { const b = e.target.closest('[dat
 $('kitColors').addEventListener('contextmenu', e => { const b = e.target.closest('[data-col]'); if (b) { e.preventDefault(); kitPickColor('col1', Number(b.dataset.col)); } });
 $('kitGlow').addEventListener('change', e => { kit.glow = e.target.checked; kitChanged(); });
 $('kitRandom').addEventListener('click', kitRandom);
-$('kitReset').addEventListener('click', () => { Object.assign(kit, KIT_DEFAULTS); kitChanged(); });
+$('kitReset').addEventListener('click', () => { Object.assign(kit, KIT_DEFAULTS); kitChanged(); });   // Geometry Dash's default look
 $('kitDownload').addEventListener('click', kitDownload);
 $('btnIcons').addEventListener('click', () => showScreen('icons'));
 
@@ -5247,4 +5230,5 @@ renderPalette();
 showScreen('menu');
 loadGdFont();
 loadSprites();
+iconSource('cube', kit.cube); iconSource('ship', kit.ship);   // your icons, so they're ready before you play
 requestAnimationFrame(frame);
