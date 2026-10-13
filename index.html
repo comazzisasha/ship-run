@@ -577,6 +577,14 @@ body .toast.over.under { top: auto; bottom: calc(10px + env(safe-area-inset-bott
 .cp-arrow svg { width: 100%; height: 100%; overflow: visible; }
 .cp-arrow.left svg { transform: scaleX(-1); }
 .cp-arrow:active { transform: scale(1.15); }
+.cp-chan-head { position: relative; }
+.cp-menu { position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); z-index: 5; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 10px; width: 210px;
+  background: #8a4a1c; border: 3px solid #000; border-radius: 12px; box-shadow: 0 0 0 2px #e8a25a, 0 8px 18px rgba(0,0,0,.5); }
+.cp-menu[hidden] { display: none; }
+.cp-menu [data-cpfree], .cp-menu-title { grid-column: 1 / -1; }
+.cp-menu-title { justify-self: center; font-family: var(--f-gd); font-size: 12px; margin-top: 2px; }
+.cp-menu .gd-btn { width: 100%; }
+.cp-menu .gd-btn[aria-pressed="true"] { background: linear-gradient(#8bfff7, #16cfc4); }
 .cp-idname { display: flex; align-items: center; gap: 6px; font-family: var(--f-gd); font-size: 12px; }
 .cp-idname .ch-sw { width: 16px; height: 16px; border-width: 2px; }
 .cp-trig { grid-area: trig; display: flex; flex-wrap: wrap; gap: 10px 22px; }
@@ -1365,7 +1373,17 @@ body .toast.over.under { top: auto; bottom: calc(10px + env(safe-area-inset-bott
         </div>
         <button type="button" class="gd-btn big cp-ok" id="cpOk">OK</button>
         <div class="cp-chan">
-          <div class="cp-chan-head"><span class="gold">COLOR ID</span><button type="button" class="cp-plus" id="cpPlus" aria-label="Next free channel" title="Next free channel">+</button></div>
+          <div class="cp-chan-head"><span class="gold">COLOR ID</span>
+            <button type="button" class="cp-plus" id="cpPlus" aria-label="Channel menu: next free or a special channel" aria-haspopup="true" aria-expanded="false" title="Next free channel, or a special channel">+</button>
+            <div class="cp-menu" id="cpMenu" role="menu" hidden>
+              <button type="button" class="gd-btn small blue" role="menuitem" data-cpfree>NEXT FREE</button>
+              <span class="cp-menu-title o">SPECIAL</span>
+              <button type="button" class="gd-btn small" role="menuitem" data-cpnamed="1000" title="Background">BG</button>
+              <button type="button" class="gd-btn small" role="menuitem" data-cpnamed="1001" title="Floor and ceiling">GROUND</button>
+              <button type="button" class="gd-btn small" role="menuitem" data-cpnamed="1002" title="Floor and ceiling line">LINE</button>
+              <button type="button" class="gd-btn small" role="menuitem" data-cpnamed="1004" title="Default object color">OBJ</button>
+            </div>
+          </div>
           <div class="cp-id">
             <button type="button" class="cp-arrow left" data-cpid="-1" aria-label="Previous channel"><svg aria-hidden="true"><use href="#i-tri"/></svg></button>
             <input class="gd-input" id="cpId" type="text" spellcheck="false" aria-label="Color channel: 1 to 999, or BG, GROUND, LINE, OBJ" title="1 to 999, or BG, GROUND, LINE, OBJ">
