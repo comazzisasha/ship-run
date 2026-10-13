@@ -1563,7 +1563,7 @@ function iconProbe(form) {
     return have;
   })();
 }
-// The icon sheets from icons.js, in order: the SSOH texture pack's icons, then
+// The icon sheets from icons.js, in order: Geometry Dash 2.1's full-quality icons, then
 // GJ_GameSheetIcons. Which quality: the chosen one, or the best one below it there is.
 const ICON_SOURCES = (ICONS.data && ICONS.data.sources) || [];
 const QUALITIES = ['high', 'medium', 'low'];
@@ -4881,7 +4881,7 @@ function kitCount(form) {
   for (const src of ICON_SOURCES) for (const k in Object.values(src.frames)[0] || {}) { const m = re.exec(k); if (m) n = Math.max(n, Number(m[1])); }
   return Math.min(n, ICON_FORMS[form].max);
 }
-// Glow needs glow pictures: the SSOH icons and the icons folder have them, GJ_GameSheetIcons doesn't
+// Glow needs glow pictures: the full-quality icons and the icons folder have them, GJ_GameSheetIcons doesn't
 const kitGlowOk = () => ['cube', 'ship'].some(f => ICONS.have[f] && ICONS.have[f].length)
   || ICON_SOURCES.some(src => Object.keys(Object.values(src.frames)[0] || {}).some(k => k.endsWith('_glow_001')));
 function sizeCanvasToBox(c) {

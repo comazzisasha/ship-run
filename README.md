@@ -40,12 +40,13 @@ The icons come from, in this order:
 - An `icons/` folder (optional): Geometry Dash's own per-icon files from its
   `Resources/icons` folder, e.g. `ship_05-uhd.png` + `ship_05-uhd.plist`. These are
   used automatically if present.
-- The SSOH texture pack's cubes and ships, in `icons-ssoh-uhd.png` (High graphics),
-  `icons-ssoh-hd.png` (Medium) and `icons-ssoh.png` (Low). Only the pack's icons
-  were cut out; nothing else from the pack is used.
-- `GJ_GameSheetIcons.png`, Geometry Dash's low-quality icon sheet, for icons the
-  pack doesn't have.
+- Geometry Dash's original cubes (1-142) and ships (1-51) with glow, cut out of
+  Geometry Dash 2.1's `GJ_GameSheet02-uhd` and `GJ_GameSheetGlow-uhd` into
+  `icons-gd-uhd.png` (High graphics), `icons-gd-hd.png` (Medium) and
+  `icons-gd.png` (Low).
+- `GJ_GameSheetIcons.png`, Geometry Dash's low-quality icon sheet, for the icons
+  2.1 doesn't have (ships 52-79, cubes 143-248).
 
 `icons.js` says where every icon is on these sheets. Remake it with
 `python3 tools/make_icons_js.py` (see the top of that file for how to cut the
-SSOH icons again from the pack's sheets).
+icons again from the 2.1 sheets).
