@@ -349,21 +349,23 @@ const SAW_LOOKS = {
 };
 const sawLook = o => SAW_LOOKS[o.design || 'sawblade_01'];
 // Outline pieces: sprite, centre height, the white parts as boxes [left, bottom, right, top]
-// (0..1 inside the square), and whether it fades like an outline spike.
-// Hitboxes are never thinner than LINE_T, so a fast ship cannot slip through a line.
-const LINE_T = 0.15;
+// (0..1 inside the square, measured from the sprites: a line is 3 of 60 pixels, LW), and
+// whether it fades like an outline spike. A box narrower than LINE_T from side to side is
+// widened evenly around its middle: at quad speed the ship moves 8.5 pixels a step, and its
+// 6 pixel inner hitbox could jump right over a thinner wall.
+const LINE_T = 0.15, LW = 3 / 60;
 const OUTLINE_PIECES = {
   1:  ['blockOutline_01_001', 0.5, [[0, 0, 1, 1]]],
-  2:  ['blockOutline_02_001', 1 - 1.5 / 60, [[0, 1 - LINE_T, 1, 1]]],
-  3:  ['blockOutline_03_001', 0.5, [[0, 1 - LINE_T, 1, 1], [0, 0, LINE_T, 1 - LINE_T]]],
-  4:  ['blockOutline_04_001', 0.5, [[0, 1 - LINE_T, 1, 1], [0, 0, LINE_T, 1 - LINE_T], [1 - LINE_T, 0, 1, 1 - LINE_T]]],
-  5:  ['blockOutline_05_001', 0.5, [[0, 0, LINE_T, 1]]],
-  6:  ['blockOutline_06_001', 0.5, [[0, 1 - LINE_T, LINE_T, 1]]],
-  7:  ['blockOutline_07_001', 0.5, [[0, 1 - LINE_T, LINE_T, 1]]],
-  8:  ['blockOutline_08_001', 0.5, [[0, 1 - LINE_T, LINE_T, 1]]],
-  9:  ['blockOutline_09_001', 1 - 1.5 / 60, [[0, 1 - LINE_T, 1, 1]]],
-  10: ['invisibleOutline_01_001', 1 - 1.5 / 60, [[0, 1 - LINE_T, 1, 1]], true],
-  11: ['invisibleOutline_b_01_001', 1 - 3 / 60, [[0, 1 - LINE_T, 1, 1]], true],
+  2:  ['blockOutline_02_001', 1 - 1.5 / 60, [[0, 1 - LW, 1, 1]]],
+  3:  ['blockOutline_03_001', 0.5, [[0, 1 - LW, 1, 1], [0, 0, LW, 1 - LW]]],
+  4:  ['blockOutline_04_001', 0.5, [[0, 1 - LW, 1, 1], [0, 0, LW, 1 - LW], [1 - LW, 0, 1, 1 - LW]]],
+  5:  ['blockOutline_05_001', 0.5, [[0, 0, LW, 1]]],
+  6:  ['blockOutline_06_001', 0.5, [[0, 1 - LW, LW, 1]]],
+  7:  ['blockOutline_07_001', 0.5, [[0, 1 - 4 / 60, 4 / 60, 1]]],
+  8:  ['blockOutline_08_001', 0.5, [[0, 1 - LW, 6 / 60, 1]]],
+  9:  ['blockOutline_09_001', 1 - 1.5 / 60, [[0, 1 - LW, 1, 1]]],
+  10: ['invisibleOutline_01_001', 1 - 1.5 / 60, [[0, 1 - LW, 1, 1]], true],
+  11: ['invisibleOutline_b_01_001', 1 - 3 / 60, [[0, 1 - 2 * LW, 1, 1]], true],
 };
 const OUTLINE_MAX = 11;
 // Deco that is placed off-centre in its square (slabs sit at the top, fake spikes on the floor)
@@ -430,8 +432,10 @@ function makeObject(def, colOffset = 0, idx = 0) {
       o.parts = P[2].map(([u0, v0, u1, v1]) => {
         if (o.flip) [u0, u1] = [1 - u1, 1 - u0];
         const pts = [[u0, v0], [u1, v1]].map(([u, v]) => turn ? rotatePoint([o.x + u * g, o.y - v * g], c, turn) : [o.x + u * g, o.y - v * g]);
-        const box = { l: Math.min(pts[0][0], pts[1][0]), r: Math.max(pts[0][0], pts[1][0]), t: Math.min(pts[0][1], pts[1][1]), b: Math.max(pts[0][1], pts[1][1]) };
-        return { box, poly: boxPoly(box.l, box.t, box.r, box.b) };
+        const line = { l: Math.min(pts[0][0], pts[1][0]), r: Math.max(pts[0][0], pts[1][0]), t: Math.min(pts[0][1], pts[1][1]), b: Math.max(pts[0][1], pts[1][1]) };
+        const box = { ...line }, short = LINE_T * g - (box.r - box.l);
+        if (short > 0) { box.l -= short / 2; box.r += short / 2; }
+        return { box, line, poly: boxPoly(box.l, box.t, box.r, box.b) };     // line = the drawn line, box = its hitbox
       });
       o.box = o.parts[0].box; o.hit = { poly: o.parts[0].poly };
     }
@@ -504,7 +508,40 @@ function makeObject(def, colOffset = 0, idx = 0) {
     if (dch0) o.dch = chId(op.detail) || dch0;
   }
   o.groups = Array.isArray(op.groups) ? op.groups.map(n => Math.round(Number(n))).filter(n => n >= 1 && n <= 9999) : [];
+  editGroupFields(o, op);
   return o;
+}
+
+// --- Edit Group settings: editor layers, drawing order, and the Extra tab ---
+//   ["Block", 5, 3, {"editorL": 2, "zLayer": "T1", "zOrder": 3, "hide": true}]
+// Objects with no hitbox (deco, slopes, grid blocks) start on editor layer 1,
+// everything else on layer 0. A setting at its default is left out of levels.js.
+const Z_LAYERS = ['B5', 'B4', 'B3', 'B2', 'B1', 'T1', 'T2', 'T3', 'T4'];
+const Z_DEFAULT = 4, Z_FRONT = 5;      // no Z layer draws like B1; T1 and up are drawn over the ship
+const EDITOR_LAYER_MAX = 999, Z_ORDER_MAX = 999, MAX_GROUPS = 10;
+const layerDefault = t => t === 'Deco' || t === 'Slope' || t === 'GridBlock' ? 1 : 0;
+const isGameplay = t => !!PORTALS[t] || t === 'TelePortal' || t === 'Pad' || t === 'Orb' || t === 'Coin' || isTrigger(t);
+function intIn(v, lo, hi, def) { const n = Math.round(Number(v)); return v != null && Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : def; }
+// HSV from Edit Object: hue shift in degrees, saturation and brightness as
+// multipliers (0 to 2), or added (-1 to 1) when sAdd / vAdd are on. null = no change.
+function parseHsv(v) {
+  if (!isOpts(v)) return null;
+  const num = (x, lo, hi, d) => typeof x === 'number' && Number.isFinite(x) ? Math.max(lo, Math.min(hi, x)) : d;
+  const sAdd = !!v.sAdd, vAdd = !!v.vAdd;
+  const h = num(v.h, -180, 180, 0), s = sAdd ? num(v.s, -1, 1, 0) : num(v.s, 0, 2, 1), val = vAdd ? num(v.v, -1, 1, 0) : num(v.v, 0, 2, 1);
+  if (!h && s === (sAdd ? 0 : 1) && val === (vAdd ? 0 : 1)) return null;
+  return { h, s, v: val, sAdd, vAdd };
+}
+function editGroupFields(o, op) {
+  o.edL = intIn(op.editorL, 0, EDITOR_LAYER_MAX, layerDefault(o.t));
+  o.edL2 = intIn(op.editorL2, 0, EDITOR_LAYER_MAX, 0);          // 0 = no second layer
+  o.zRank = Z_LAYERS.includes(op.zLayer) ? Z_LAYERS.indexOf(op.zLayer) : Z_DEFAULT;
+  o.zOrder = intIn(op.zOrder, -Z_ORDER_MAX, Z_ORDER_MAX, 0);
+  o.hide = !!op.hide;               // not drawn while playing
+  o.noTouch = !!op.noTouch;         // the ship goes straight through it
+  o.highDetail = !!op.highDetail;   // hidden with LOW DETAIL MODE
+  o.noGlow = !!op.noGlow;           // no soft white edge
+  o.hsv = parseHsv(op.hsv); o.detailHsv = parseHsv(op.detailHsv);
 }
 
 
@@ -726,7 +763,7 @@ class World {
         // an outline piece with more than one white line gets one solid box per line
         if (o.parts) for (let k = 1; k < o.parts.length; k++) {
           this.objects.push({ t: '_line', kind: 'solid', sub: true, layer: -9, idx: o.idx, part: pi, cx: o.cx, def,
-            box: o.parts[k].box, hit: { poly: o.parts[k].poly } });
+            box: o.parts[k].box, hit: { poly: o.parts[k].poly }, zRank: o.zRank, zOrder: o.zOrder, noTouch: o.noTouch });
         }
         if (o.kind === 'trigger') this.triggers.push(o);
         if (o.kind === 'coin') this.coins.push(o);
@@ -747,12 +784,13 @@ class World {
     while (lo < hi) { const mid = (lo + hi) >> 1; if (this.cxs[mid] < x) lo = mid + 1; else hi = mid; }
     return lo;
   }
-  // Objects whose Shape.centerX is within nearRange of the ship, in level order (like CMU)
+  // Objects whose Shape.centerX is within nearRange of the ship, in level order (like CMU).
+  // NoTouch objects (Edit Group > Extra) are left out, so the ship never meets them.
   near(sx) {
     const out = [];
     for (let i = this.firstAtLeast(sx - nearRange); i < this.sorted.length && this.cxs[i] < sx + nearRange; i++) {
       const o = this.sorted[i];
-      if (Math.abs(o.cx - sx) < nearRange) out.push(o);
+      if (Math.abs(o.cx - sx) < nearRange && !o.noTouch) out.push(o);
     }
     out.sort((a, b) => a.idx - b.idx);
     return out;
@@ -1129,14 +1167,23 @@ function drawPortalSpr(ctx, key, cx, cy, h, pass) {
 // of each level part (or one for the editor), the time for fades, and whether
 // this is the game (triggers hidden, coins spin) or the editor.
 const DEFAULT_COLORS = new ColorState({});
-const DRAW = { parts: null, cs: DEFAULT_COLORS, now: 0, play: false, coinTime: 0 };
+const DRAW = { parts: null, cs: DEFAULT_COLORS, now: 0, play: false, coinTime: 0, fade: null };
 function colorsOf(o) { return (DRAW.parts && DRAW.parts[o.part] && DRAW.parts[o.part].colors) || DRAW.cs; }
-// The colors one object is drawn with right now
+// The colors one object is drawn with right now. HSV (from Edit Object) changes
+// the color of just this object, not the whole channel.
 function objColors(o) {
   const cs = colorsOf(o), now = DRAW.now;
   let alpha = 1;
   for (const gid of o.groups || []) alpha *= cs.groupAlpha(gid, now);
-  return { main: o.ch ? cs.resolve(o.ch, now) : null, det: o.dch ? cs.resolve(o.dch, now) : null, alpha };
+  const main = o.ch ? cs.resolve(o.ch, now) : null, det = o.dch ? cs.resolve(o.dch, now) : null;
+  return { main: o.hsv ? shiftHsv(main, o.hsv) : main, det: o.detailHsv ? shiftHsv(det, o.detailHsv) : det, alpha };
+}
+// Like Geometry Dash: turn the hue, then multiply (or add to) saturation and brightness
+function shiftHsv(c, x) {
+  if (!c) return c;
+  const [h, s, v] = rgbToHsv([c.r, c.g, c.b]);
+  const [r, g, b] = hsvToRgb((h + x.h + 360) % 360, clamp01(x.sAdd ? s + x.s : s * x.s), clamp01(x.vAdd ? v + x.v : v * x.v));
+  return { ...c, r, g, b };
 }
 const cssOf = c => c ? `rgb(${Math.round(c.r)},${Math.round(c.g)},${Math.round(c.b)})` : '#fff';
 
@@ -1152,12 +1199,16 @@ function saveCoin(levelId, key) {
 }
 const COIN_FRAMES = [1, 2, 3, 4, 3, 2];      // the silver coin turning around
 
+// Hide and High Detail (Edit Group > Extra) only matter while playing.
+// DRAW.fade is the editor's: how see-through each object is (other layers, hidden objects).
 function drawObject(ctx, o, pass) {
   if (pass === 'front' && o.kind !== 'portal') return;
   if (o.sub) return;
+  if (DRAW.play && (o.hide || (o.highDetail && settings.lowDetail))) return;
   const cols = objColors(o);
-  if (cols.alpha <= 0.004) return;
-  if (cols.alpha < 1) { ctx.save(); ctx.globalAlpha *= cols.alpha; drawObjectArt(ctx, o, pass, cols); ctx.restore(); }
+  const alpha = cols.alpha * (DRAW.fade ? DRAW.fade(o) : 1);
+  if (alpha <= 0.004) return;
+  if (alpha < 1) { ctx.save(); ctx.globalAlpha *= alpha; drawObjectArt(ctx, o, pass, cols); ctx.restore(); }
   else drawObjectArt(ctx, o, pass, cols);
 }
 
@@ -1190,7 +1241,10 @@ function drawObjectArt(ctx, o, pass, cols) {
       if (drawSprInCell(ctx, P[0], o, 0.5, P[1], { flipX: o.flip, color: main, alpha: a })) break;
       ctx.save(); ctx.globalAlpha *= a; ctx.fillStyle = ctx.strokeStyle = cssOf(main);
       if (o.piece === 1) { ctx.lineWidth = 1.2; ctx.strokeRect(o.x + 0.6, o.y - g + 0.6, g - 1.2, g - 1.2); }
-      else for (const part of o.parts) { const b = part.box; ctx.fillRect(b.l, b.t, Math.max(1, b.r - b.l), Math.max(1, b.b - b.t)); }
+      else for (const { line: b } of o.parts) {       // each line as thick as piece 1's outline, kept inside the square
+        const w = Math.max(1.2, b.r - b.l), h = Math.max(1.2, b.b - b.t);
+        ctx.fillRect(Math.min(b.l, o.x + g - w), Math.min(b.t, o.y - h), w, h);
+      }
       ctx.restore();
       break;
     }
@@ -1243,7 +1297,7 @@ function drawObjectArt(ctx, o, pass, cols) {
       const L = sawLook(o), spr = (o.design || 'sawblade_01') + '_001', rot = rad(o.spin);
       if (sprCanvas(spr + (L.join ? '|' + L.join : ''))) {
         // a soft white edge, so black saws show up on dark backgrounds (like Geometry Dash's glow)
-        if (L.halo) drawSpr(ctx, spr + (L.join ? '|' + L.join : ''), o.cx, o.cy, { scale: o.size * 1.06, rot, alpha: 0.45 * (main ? main.a : 1) });
+        if (L.halo && !o.noGlow) drawSpr(ctx, spr + (L.join ? '|' + L.join : ''), o.cx, o.cy, { scale: o.size * 1.06, rot, alpha: 0.45 * (main ? main.a : 1) });
         drawLayered(ctx, spr, o.cx, o.cy, { scale: o.size, rot }, cols, L.join || '', L.det || '', !!L.under);
         break;
       }
@@ -1381,8 +1435,11 @@ function drawObjectArt(ctx, o, pass, cols) {
   }
 }
 
+// Drawing order: Z layer (B5 lowest, T4 highest), then the object's own draw
+// group (o.layer), then Z order, then the order it was placed in.
+const drawOrder = (a, b) => a.zRank - b.zRank || a.layer - b.layer || a.zOrder - b.zOrder || a.idx - b.idx;
 function drawObjects(ctx, list, pass) {
-  const sorted = list.slice().sort((a, b) => a.layer - b.layer || a.idx - b.idx);
+  const sorted = list.slice().sort(drawOrder);
   for (const o of sorted) drawObject(ctx, o, pass);
 }
 // Portal fronts go over the ship, like in Geometry Dash
@@ -1758,10 +1815,14 @@ function drawGame() {
   }
   const vis = world.visible(camL, camL + VIEW_WIDTH);
   const wx = shipCenterX + sI;
+  // B layers (and objects with no Z layer) go behind the ship, T layers in front of it
+  const behind = [], front = [];
+  for (const o of vis) (o.zRank >= Z_FRONT ? front : behind).push(o);
   fadeShipX = wx;
-  drawObjects(ctx, vis, 'back');
+  drawObjects(ctx, behind, 'back');
   drawPlayer(ctx, wx, yI, thI, Me.sizeScale, Me.gravity, upInput && Me.alive);
-  drawPortalFronts(ctx, vis);
+  drawPortalFronts(ctx, behind);
+  if (front.length) drawObjects(ctx, front);
   fadeShipX = null;
   if (game.deathHitboxes || game.showHitboxes) {
     drawHitboxes(ctx, vis, { worldX: wx, y: yI, sizeScale: Me.sizeScale, rot: Me.rot });
@@ -1890,7 +1951,7 @@ function saveLevelsSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(save
 // website only see Play and Practice until they turn it on themselves.
 const SETTINGS_KEY = 'shiprun.settings.v1';
 const SETTING_DEFAULTS = {
-  editorMode: false, showProgress: true, showPercent: true, showAttempts: true, showLevelName: true,
+  editorMode: false, showProgress: true, showPercent: true, showAttempts: true, showLevelName: true, lowDetail: false,
   edHitboxes: false, edGrid: true, edInfo: true, edTrail: true, edCoords: true, edWarnings: true,
   swipe: true, freeMove: true, snap: true,
   art: 'gd', quality: 'medium',
@@ -2064,6 +2125,7 @@ const ed = {
   hover: null, drag: null, spaceDown: false,
   trail: null, clip: null, needsDraw: true, warnings: [], camSet: false,
   saved: '', paused: false, cs: DEFAULT_COLORS, live: false,
+  edLayer: -1, lockedLayers: new Set(),      // editor layers: -1 = ALL (only kept while the level is open)
 };
 const edCanvas = $('edCanvas'), edCtx = edCanvas.getContext('2d');
 function edRequestDraw() { ed.needsDraw = true; }
@@ -2071,6 +2133,7 @@ function edRequestDraw() { ed.needsDraw = true; }
 function edOpen(level) {
   if (ed.level !== level) {
     ed.level = level; ed.sel.clear(); ed.undo = []; ed.redo = []; ed.trail = null; ed.camSet = false;
+    ed.edLayer = -1; ed.lockedLayers = new Set();
     ed.saved = levelState(level);
   }
   edClosePause();
@@ -2160,14 +2223,16 @@ function brushDef(X, Y) {
 }
 function edPlace(X, Y) {
   if (Y < 1 || Y > 10 || X < 1) return false;
-  const d = brushDef(X, Y);
+  const d = brushDef(X, Y), layer = ed.edLayer >= 0 ? ed.edLayer : layerDefault(d[0]);
+  if (layer !== layerDefault(d[0])) setOpt(d, 'editorL', layer);     // built on the layer you are on
   const key = JSON.stringify(d);
   const solidLike = d[0] === 'Block' || d[0] === 'GridBlock';
   if (ed.level.objects.some(o => JSON.stringify(o) === key || (solidLike && o[0] === d[0] && o[1] === X && o[2] === Y))) return null;
   ed.level.objects.push(d);
   // like Geometry Dash: the object you just placed is selected, so the
   // arrow keys / WASD and the action buttons work on it straight away
-  ed.sel = new Set([d]);
+  // (not on a locked layer: those objects cannot be selected)
+  ed.sel = ed.lockedLayers.has(layer) ? new Set() : new Set([d]);
   return d;
 }
 
@@ -2206,14 +2271,57 @@ function objContains(o, wx, wy) {
 function edPick(wx, wy) {
   let best = null;
   for (const o of ed.built) {
-    if (!objContains(o, wx, wy)) continue;
-    if (!best || o.layer > best.layer || (o.layer === best.layer && o.idx > best.idx)) best = o;
+    if (!edCanTouch(o) || !objContains(o, wx, wy)) continue;
+    if (!best || drawOrder(o, best) > 0) best = o;       // the one drawn on top
   }
   return best ? best.def : null;
 }
 function removeDefs(set) {
   ed.level.objects = ed.level.objects.filter(d => !set.has(d));
   for (const d of set) ed.sel.delete(d);
+}
+
+// --- editor layers (the pink arrows and number under GO TO LAYER) ---
+// ed.edLayer is the layer you are building on, or -1 for ALL (every layer at
+// once). On a layer, only objects on it (EDITOR L or EDITOR L2) can be picked,
+// selected, moved, edited or deleted; the rest are drawn see-through.
+// Objects on a locked layer cannot be selected or deleted from any view, but
+// new objects can still be placed on it (like Geometry Dash).
+const onLayer = (o, n) => o.edL === n || (o.edL2 > 0 && o.edL2 === n);
+const layerLocked = o => ed.lockedLayers.has(o.edL) || (o.edL2 > 0 && ed.lockedLayers.has(o.edL2));
+const edInView = o => ed.edLayer < 0 || onLayer(o, ed.edLayer);
+const edCanTouch = o => !!o && edInView(o) && !layerLocked(o);
+const edCanTouchDef = d => edCanTouch(ed.byDef.get(d));
+const edFade = o => (edInView(o) ? 1 : 0.3) * (o.hide ? 0.35 : 1);     // how see-through it is drawn
+function edPruneSel() { for (const d of [...ed.sel]) if (!edCanTouchDef(d)) ed.sel.delete(d); }
+function edSetLayer(n) {
+  ed.edLayer = n < 0 ? -1 : Math.min(EDITOR_LAYER_MAX, n);
+  edPruneSel(); edRequestDraw(); edRenderUI();
+}
+function edLayerStep(dir) {
+  if (ed.edLayer < 0) { if (dir > 0) edSetLayer(0); return; }    // from ALL, the right arrow goes to layer 0
+  edSetLayer(Math.max(0, ed.edLayer + dir));
+}
+// Clicking the layer number locks or unlocks that layer
+function edToggleLock() {
+  if (ed.edLayer < 0) return toast('Go to a layer with the pink arrows first, then click its number to lock it.');
+  const n = ed.edLayer, L = ed.lockedLayers;
+  if (L.has(n)) L.delete(n); else L.add(n);
+  edPruneSel(); edRequestDraw(); edRenderUI();
+  toast(L.has(n) ? `Layer ${n} locked: its objects cannot be selected or deleted.` : `Layer ${n} unlocked.`);
+}
+// GO TO LAYER: jump to the layer of the (first) selected object. It stays
+// selected, and so do the others on that layer; the rest drop out, like any layer switch.
+function edGoToLayer() {
+  const first = ed.sel.values().next().value;
+  if (!first) return toast('Select an object first. GO TO LAYER takes you to its editor layer.');
+  edSetLayer(ed.byDef.get(first).edL);
+}
+// The lowest editor layer that no object is on yet, from `from` up (the + buttons in EDIT GROUP;
+// EDITOR L2 starts at 1, since 0 there means no second layer)
+function freeEditorLayer(from = 0) {
+  for (let n = from; n <= EDITOR_LAYER_MAX; n++) if (!ed.built.some(o => onLayer(o, n))) return n;
+  return from;
 }
 
 // --- selection actions ---
@@ -2280,7 +2388,7 @@ function edDeleteSel() {
 function edDeselect() { ed.sel.clear(); edSelChanged(); }
 function edSelectWhere(test) {
   if (ed.mode === 'delete' || ed.mode === 'view') setMode('edit');
-  ed.sel = new Set(ed.level.objects.filter(test));
+  ed.sel = new Set(ed.level.objects.filter(d => test(d) && edCanTouchDef(d)));     // only this layer, never locked ones
   edSelChanged();
   toast(ed.sel.size ? `Selected ${ed.sel.size} object${ed.sel.size > 1 ? 's' : ''}.` : 'Nothing there to select.');
 }
@@ -2310,16 +2418,16 @@ function edPaste() {
   if (minY + dY < 1) dY += Math.ceil(1 - (minY + dY));
   else if (maxY + dY > 10) dY -= Math.ceil(maxY + dY - 10);
   if (minX + dX < 1) dX += Math.ceil(1 - (minX + dX));
-  const fresh = ed.clip.map(d => { const c = d.slice(); moveDef(c, dX, dY); return c; });
+  const fresh = ed.clip.map(d => { const c = clone(d); moveDef(c, dX, dY); return c; });
   edChange(() => { ed.level.objects.push(...fresh); });
-  ed.sel = new Set(fresh); edRenderUI();
+  ed.sel = new Set(fresh); edPruneSel(); edRenderUI();
 }
 function edDuplicate() {
   const list = selectedList();
   if (!list.length) return toast('Select something first: click an object in Edit mode.');
   const fresh = clone(list);
   edChange(() => { ed.level.objects.push(...fresh); });
-  ed.sel = new Set(fresh); edRenderUI();
+  ed.sel = new Set(fresh); edPruneSel(); edRenderUI();
   toast('Copied in place. Move the copies with WASD, the arrow keys or the move buttons.');
 }
 
@@ -2448,6 +2556,7 @@ function edPointerUp() {
     ed.sel = new Set(dr.base);
     if (x1 - x0 > 2 || y1 - y0 > 2) {
       for (const o of ed.built) {
+        if (!edCanTouch(o)) continue;
         const ax = o.t === 'Saw' || o.kind === 'portal' ? o.cx : o.x + gridSize / 2;
         const ay = o.t === 'Saw' ? o.cy : o.t === 'TelePortal' ? o.cy1 : o.kind === 'portal' ? o.cy : o.y - gridSize / 2;
         if (ax >= x0 && ax <= x1 && ay >= y0 && ay <= y1) ed.sel.add(o.def);
@@ -2564,7 +2673,9 @@ function drawEditor() {
 
   // objects
   const vis = ed.built.filter(o => o.cx > x0 - 140 && o.cx < x1 + 140);
+  DRAW.fade = edFade;                // other editor layers and hidden objects are see-through
   drawObjects(ctx, vis);
+  DRAW.fade = null;
 
   // teleport links
   ctx.setLineDash([3 / c.scale, 3 / c.scale]); ctx.lineWidth = 1.2 / c.scale; ctx.strokeStyle = 'rgba(255,255,255,0.8)';
@@ -2664,8 +2775,13 @@ function edRenderUI() {
   $('edHitboxes').classList.toggle('lime', !settings.edHitboxes);
   for (const b of document.querySelectorAll('#edActions [data-act]')) {
     const a = b.dataset.act;
-    b.disabled = a === 'paste' ? !ed.clip : a === 'selall' ? !ed.level.objects.length : !n;
+    b.disabled = a === 'paste' ? !ed.clip : a === 'selall' ? !ed.level.objects.length : a === 'golayer' ? false : !n;
   }
+  // the layer number: ALL, or the layer (orange when it is locked)
+  const ln = $('edLayerNum'), locked = ed.edLayer >= 0 && ed.lockedLayers.has(ed.edLayer);
+  ln.textContent = ed.edLayer < 0 ? 'ALL' : String(ed.edLayer);
+  ln.classList.toggle('locked', locked);
+  ln.title = ed.edLayer < 0 ? 'Showing every editor layer' : `Layer ${ed.edLayer}${locked ? ' (locked)' : ''}: click to ${locked ? 'unlock' : 'lock'} it`;
   for (const b of document.querySelectorAll('#edToggles [data-tog]')) b.setAttribute('aria-pressed', String(settings[b.dataset.tog]));
   $('edCoords').hidden = !settings.edCoords;
   renderProps();
@@ -2677,7 +2793,7 @@ const hasDetail = d => { const o = ed.byDef.get(d); return !!(o && o.dch); };
 function chipHTML(kind, list) {
   const ids = [...new Set(list.map(d => { const o = ed.byDef.get(d); return kind === 'detail' ? o.dch : o.ch; }))];
   const id = ids.length === 1 ? ids[0] : 0, c = id ? ed.cs.resolve(id, 0) : null;
-  return `<button class="ch-chip" type="button" data-chip="${kind}" title="Pick the ${kind === 'detail' ? 'detail' : 'main'} color channel">
+  return `<button class="ch-chip" type="button" data-chip="${kind}" title="Edit Object: the ${kind === 'detail' ? 'detail' : 'base'} color of the selection">
     <span class="ch-sw" style="background:${c ? cssOf(c) : 'linear-gradient(135deg,#fff 50%,#000 50%)'}"></span><span class="ch-name">${id ? chLabel(id) : 'MIXED'}</span></button>`;
 }
 function renderProps() {
@@ -2716,9 +2832,19 @@ function renderProps() {
   const chipField = (label, kind, l) => `<div class="field ch-field"><span class="field-label">${label}</span>${chipHTML(kind, l)}</div>`;
   if (col.length) html += chipField('COLOR', 'main', col);
   if (det.length) html += chipField('DETAIL', 'detail', det);
-  const gs = list.map(d => ((optsOf(d) || {}).groups || []).join(', '));
-  const same = gs.every(x => x === gs[0]);
-  html += field('GROUPS', `<input class="gd-input" type="text" data-groups value="${same ? esc(gs[0]) : ''}" placeholder="${same ? 'NONE' : 'MIXED'}" aria-label="Group IDs, separated by commas" title="Group IDs for alpha triggers, like 1, 4">`);
+  // editor layer(s), and the group IDs (the button opens EDIT GROUP)
+  const shared = f => { const v = f(list[0]); return list.every(d => f(d) === v) ? v : null; };
+  const lay = shared(d => { const o = ed.byDef.get(d); return o.edL + (o.edL2 > 0 && o.edL2 !== o.edL ? ', ' + o.edL2 : ''); });
+  html += `<button type="button" class="field sel-layer" data-golayer title="GO TO LAYER: show only this editor layer"><span class="field-label">LAYER</span><span class="sel-val o">${lay === null ? 'MIXED' : lay}</span></button>`;
+  // a copy of the layer row under GO TO LAYER, shown only on a short phone, where this panel covers that row
+  const ln = $('edLayerNum');
+  html += `<div class="sel-layers" role="group" aria-label="Editor layer">
+    <button class="layer-arrow all" type="button" data-layer="all" title="Show all layers" aria-label="Show all layers"><svg aria-hidden="true"><use href="#i-page"/></svg></button>
+    <button class="layer-arrow" type="button" data-layer="-1" title="Previous layer" aria-label="Previous layer"><svg aria-hidden="true"><use href="#i-page-pink"/></svg></button>
+    <button class="layer-num o${ln.classList.contains('locked') ? ' locked' : ''}" type="button" data-layer="lock" title="${esc(ln.title)}">${ln.textContent}</button>
+    <button class="layer-arrow right" type="button" data-layer="1" title="Next layer" aria-label="Next layer"><svg aria-hidden="true"><use href="#i-page-pink"/></svg></button></div>`;
+  const gs = shared(d => ed.byDef.get(d).groups.join(', '));
+  html += `<div class="field ch-field"><span class="field-label">GROUPS</span><button class="ch-chip" type="button" data-open-egroup title="Edit Group: group IDs, editor layers, Z layer"><span class="ch-name">${gs === null ? 'MIXED' : gs || 'NONE'}</span></button></div>`;
   ed.renderingProps = true;          // replacing a focused box fires its change event again: ignore that one
   try { box.innerHTML = html; } finally { ed.renderingProps = false; }
 }
@@ -2746,13 +2872,6 @@ $('edSel').addEventListener('change', e => {
   const t = e.target;
   if (ed.renderingProps || !t.isConnected) return;
   if (t.matches('[data-saw]')) { t.blur(); sawLiveEnd(); return; }
-  if (t.matches('[data-groups]')) {
-    const ids = [...new Set(String(t.value).split(/[^0-9]+/).map(Number).filter(n => n >= 1 && n <= 9999))];
-    const list = selectedList();
-    edChange(() => { for (const d of list) setOpt(d, 'groups', ids.length ? ids : null); });
-    edRenderUI();
-    return;
-  }
   if (!t.dataset.i) return;
   const list = selectedList(); if (list.length !== 1) return;
   const d = list[0], i = Number(t.dataset.i);
@@ -2764,7 +2883,11 @@ $('edSel').addEventListener('change', e => {
 });
 $('edSel').addEventListener('click', e => {
   const chip = e.target.closest('[data-chip]');
-  if (chip) { openChannelPicker('object', chip.dataset.chip); return; }
+  if (chip) { openEditObject(chip.dataset.chip); return; }
+  if (e.target.closest('[data-open-egroup]')) { openEditGroup(); return; }
+  if (e.target.closest('[data-golayer]')) { edGoToLayer(); return; }
+  const l = e.target.closest('[data-layer]');
+  if (l) { edLayerButton(l.dataset.layer); return; }
   if (e.target.closest('[data-edit-trigger]')) openTriggerEditor(selectedList()[0]);
 });
 
@@ -2779,11 +2902,13 @@ function usedChannels() {        // channels this level already uses
     for (const k of ['color', 'detail', 'copy']) if (op[k] != null) used.add(chId(op[k]));
     if (d[0] === 'ColorTrigger') used.add(chId(op.channel == null ? 1 : op.channel));
   }
+  // and the colors objects have without being given one (like channel 1 on deco details)
+  for (const o of ed.built) { if (o.ch) used.add(o.ch); if (o.dch) used.add(o.dch); }
   if (ed.level.objects.some(d => d[0] === 'ColorTrigger' && (optsOf(d) || {}).channel == null)) used.add(1);
   used.delete(0);
   return used;
 }
-function nextFreeChannel() { const u = usedChannels(); for (let i = 1; i <= 999; i++) if (!u.has(i)) return i; return 1; }
+function nextFreeChannel(from = 1) { const u = usedChannels(); for (let i = Math.max(1, from); i <= 999; i++) if (!u.has(i)) return i; return 1; }
 function chpCurrent() {          // the channel the selection uses now (0 when mixed)
   if (chp.mode !== 'object') return 0;
   const list = selectedList().filter(chp.kind === 'detail' ? hasDetail : isColorable);
@@ -2906,6 +3031,7 @@ function closeColorPop() {
   edChanged(); edRenderUI();
   if (cp.back === 'picker') chpRefresh();
   else if (cp.back === 'settings') refreshSettings();
+  else if (cp.back === 'eobj') eoRender();
 }
 // Writes the window's settings into the trigger or the level, so the editor shows them straight away
 function cpWrite() {
@@ -2920,7 +3046,7 @@ function cpWrite() {
     if (s.blend) op.blending = true;
     if (cp.touch) op.touch = true;
     if (cp.spawn) op.spawn = true;
-    if (old.groups) op.groups = old.groups;
+    for (const k of EG_KEEP) if (old[k] != null) op[k] = old[k];     // its EDIT GROUP settings stay
     if (optsOf(d)) d.pop();
     d.push(op);
   } else {
@@ -3101,10 +3227,17 @@ $('colorPop').addEventListener('click', e => {
 
 // --- the alpha trigger window: group, fade time, opacity ---
 const ap = { def: null, snap: '' };
-function nextFreeGroup() {
+// The lowest group ID the level does not use yet (in objects' groups or as an
+// alpha trigger's target), counting up from `from`. `skip` is the alpha trigger
+// being edited: its own target does not count, so NEXT FREE there keeps giving the same ID.
+function nextFreeGroup(from = 1, skip = null) {
   const used = new Set();
-  for (const d of ed.level.objects) for (const g of ((optsOf(d) || {}).groups || [])) used.add(Number(g));
-  for (let i = 1; i < 10000; i++) if (!used.has(i)) return i;
+  for (const d of ed.level.objects) {
+    const op = optsOf(d) || {};
+    for (const g of op.groups || []) used.add(Number(g));
+    if (d[0] === 'AlphaTrigger' && op.group && d !== skip) used.add(Number(op.group));
+  }
+  for (let i = Math.max(1, from); i < 10000; i++) if (!used.has(i)) return i;
   return 1;
 }
 function alphaHTML() {
@@ -3123,7 +3256,7 @@ function alphaHTML() {
       <input type="range" class="gd-range al-range" id="alOp" min="0" max="1" step="0.01" value="${o.opacity}" aria-label="Opacity"></div>
     <div class="al-row"><label class="gd-toggle"><input type="checkbox" class="gd-check" id="alTouch"${o.touch ? ' checked' : ''}> TOUCH TRIGGER</label>
       <label class="gd-toggle"><input type="checkbox" class="gd-check" id="alSpawn"${o.spawn ? ' checked' : ''}> SPAWN TRIGGER</label></div>
-    <p>When the ship passes this trigger, every object in the group fades to this opacity. To put objects in a group, select them and type the number in GROUPS.</p>
+    <p>When the ship passes this trigger, every object in the group fades to this opacity. To put objects in a group, select them and press EDIT GROUP.</p>
   </div>`;
 }
 function openAlphaEditor(d) {
@@ -3144,7 +3277,7 @@ function alWrite(fromRange) {
   if (fade !== 0.5) op.fade = round3(fade);
   if ($('alTouch').checked) op.touch = true;
   if ($('alSpawn').checked) op.spawn = true;
-  if (old.groups) op.groups = old.groups;
+  for (const k of EG_KEEP) if (old[k] != null) op[k] = old[k];       // its EDIT GROUP settings stay
   if (optsOf(d)) d.pop();
   d.push(op);
   edRebuild(); edRequestDraw();
@@ -3175,11 +3308,564 @@ $('modalBody').addEventListener('click', e => {
   if (modalKind !== 'alpha') return;
   const b = e.target.closest('button'); if (!b) return;
   if (b.dataset.alg) $('alGroup').value = Math.max(0, (Number($('alGroup').value) || 0) + Number(b.dataset.alg));
-  else if (b.id === 'alFree') $('alGroup').value = nextFreeGroup();
+  else if (b.id === 'alFree') $('alGroup').value = nextFreeGroup(1, ap.def);
   else return;
   alWrite(false);
   alNote();
 });
+
+// --- the EDIT OBJECT window: the color of the selection (laid out like Geometry Dash's) ---
+// BASE / DETAIL picks which of the two colors you are changing. Clicking a
+// channel gives it to every selected object that has that color, and the
+// square at the bottom right changes the channel itself (for the whole level).
+// HSV shifts the color of just these objects. Every change is one undo step.
+// (A single trigger opens its own window instead, like Geometry Dash.)
+const eo = { kind: 'main', page: 0, offset: 0, hsv: false, live: false, clip: null };
+const eoRecent = [];                 // channels given out this session, newest first
+const EO_PER = 35, EO_PAGES = Math.ceil(999 / EO_PER), EO_RECENT = 15;
+// The SPECIAL column, 5 rows of 3: [label, channel (-1 = D, 0 = not in Ship Run), the color a 0 is drawn in]
+const EO_SPECIAL = [
+  ['D', -1], ['P1', CH.P1], ['P2', CH.P2],
+  ['BG', CH.BG], ['G1', CH.GROUND], ['MG', 0, CH.GROUND],
+  ['LBG', 0, CH.BG], ['G2', 0, CH.GROUND], ['MG2', 0, CH.GROUND],
+  ['OBJ', CH.OBJ], ['L', CH.LINE], ['3DL', 0, CH.LINE],
+  ['LTR', 0, CH.WHITE], ['', CH.BLACK], ['', CH.WHITE],
+];
+const EO_LABEL = Object.fromEntries(EO_SPECIAL.filter(s => s[1] > 0).map(([label, id]) => [id, label]));
+const EO_NAMES = { [CH.P1]: 'P1: player color 1', [CH.P2]: 'P2: player color 2', [CH.BG]: 'BG: the background', [CH.GROUND]: 'G1: the ground',
+  [CH.OBJ]: 'OBJ: the object color', [CH.LINE]: 'L: the ground line', [CH.BLACK]: 'Black', [CH.WHITE]: 'White' };
+// HSV as the window shows it (no change = hue 0, saturation and brightness x1)
+const HSV_NONE = { h: 0, s: 1, v: 1, sAdd: false, vAdd: false };
+const eoHsvKey = () => eo.kind === 'detail' ? 'detailHsv' : 'hsv';
+function hsvOf(d, key = eoHsvKey()) {
+  const v = optOf(d, key);
+  if (!isOpts(v)) return { ...HSV_NONE };
+  return parseHsv(v) || { ...HSV_NONE, s: v.sAdd ? 0 : 1, v: v.vAdd ? 0 : 1, sAdd: !!v.sAdd, vAdd: !!v.vAdd };
+}
+// The shortest levels.js form: {"h": 40, "s": 0.5}. A ticked ADD box is kept even at 0.
+const round2 = v => Number(Number(v).toFixed(2));
+function hsvJSON(x) {
+  const out = {}, h = Math.round(x.h), s = round2(x.s), v = round2(x.v);
+  if (h) out.h = h;
+  if (s !== (x.sAdd ? 0 : 1)) out.s = s;
+  if (v !== (x.vAdd ? 0 : 1)) out.v = v;
+  if (x.sAdd) out.sAdd = true;
+  if (x.vAdd) out.vAdd = true;
+  return Object.keys(out).length ? out : null;
+}
+// The selected objects this window changes: all with a color, or all with a detail color
+const eoList = () => selectedList().filter(eo.kind === 'detail' ? hasDetail : isColorable);
+const eoChOf = d => { const o = ed.byDef.get(d); return eo.kind === 'detail' ? o.dch : o.ch; };
+function eoCurrent(list = eoList()) { const id = list.length ? eoChOf(list[0]) : 0; return list.every(d => eoChOf(d) === id) ? id : 0; }   // 0 = mixed
+
+// The [i] buttons of EDIT GROUP and EDIT OBJECT: an INFO popup over the window, like Geometry Dash's
+function showInfo(text) { showModal('INFO', `<p>${esc(text)}</p>`, [{ label: 'OK', primary: true, fn: hideModal }]); }
+
+function openEditObject(kind = 'main') {
+  const list = selectedList();
+  if (!list.length) return toast('Select something first: click an object in Edit mode.');
+  if (list.length === 1 && isTrigger(list[0][0])) { openTriggerEditor(list[0]); return; }
+  if (!list.some(isColorable)) return toast('Nothing selected can be colored.');
+  eo.kind = kind === 'detail' && list.some(hasDetail) ? 'detail' : 'main';
+  eo.hsv = false;
+  eoShowPage();
+  $('eoPop').hidden = false;
+  eoRender();
+}
+function eoShowPage() { const id = eoCurrent(); eo.page = id >= 1 && id <= 999 ? Math.floor((id - 1) / EO_PER) : 0; }
+function eoRender() {
+  const pop = $('eoPop');
+  if (pop.hidden) return;
+  const list = eoList();
+  if (!list.length) { closeEditObject(); return; }
+  pop.innerHTML = eoHTML(list);
+  pop.querySelectorAll('[data-some]').forEach(c => { c.indeterminate = true; });
+  fitText(pop);
+  placeToast();
+}
+function closeEditObject() {
+  const pop = $('eoPop');
+  if (pop.hidden) return;
+  eoLiveEnd();
+  pop.hidden = true; pop.innerHTML = '';
+  edRenderUI();
+}
+// Gives the objects channel id (-1 = D: each back to its own default color)
+function eoApply(id) {
+  const key = eo.kind === 'detail' ? 'detail' : 'color', list = eoList();
+  egChange(() => {
+    for (const d of list) {
+      const o = ed.byDef.get(d), def0 = eo.kind === 'detail' ? o.dch0 : o.ch0;
+      setOpt(d, key, id === -1 || id === def0 ? null : chKey(id));
+    }
+  });
+  if (id > 0) { const i = eoRecent.indexOf(id); if (i >= 0) eoRecent.splice(i, 1); eoRecent.unshift(id); eoRecent.length = Math.min(eoRecent.length, EO_RECENT); }
+  eoRender();
+}
+// COPY / PASTE: the channels and HSV of one object, onto the whole selection
+function eoCopy() {
+  const d = selectedList().find(isColorable), o = ed.byDef.get(d);
+  const raw = k => optOf(d, k) == null ? null : clone(optOf(d, k));
+  eo.clip = { ch: o.ch, dch: o.dch, hsv: raw('hsv'), detailHsv: raw('detailHsv') };
+  toast(ed.sel.size > 1 ? 'Copied the color of the first selected object.' : 'Color copied. Select other objects and press PASTE.');
+}
+function eoPaste() {
+  const c = eo.clip, list = selectedList().filter(isColorable);
+  if (!c) return;
+  egChange(() => {
+    for (const d of list) {
+      const o = ed.byDef.get(d);
+      setOpt(d, 'color', c.ch === o.ch0 ? null : chKey(c.ch)); setOpt(d, 'hsv', c.hsv && clone(c.hsv));
+      if (o.dch0 && c.dch) { setOpt(d, 'detail', c.dch === o.dch0 ? null : chKey(c.dch)); setOpt(d, 'detailHsv', c.detailHsv && clone(c.detailHsv)); }
+    }
+  });
+  toast(`Pasted the color onto ${list.length} object${list.length > 1 ? 's' : ''}.`);
+}
+// HSV: k is 'h', 's' or 'v'. A value typed or dragged is written to every object
+// (in the mode the window shows when their ADD boxes differ).
+function eoSetHsv(k, val) {
+  const key = eoHsvKey(), list = eoList(), add = k !== 'h' && list.every(d => hsvOf(d, key)[k + 'Add']);
+  const [lo, hi] = k === 'h' ? [-180, 180] : add ? [-1, 1] : [0, 2];
+  for (const d of list) {
+    const x = hsvOf(d, key);
+    x[k] = Math.max(lo, Math.min(hi, val));
+    if (k !== 'h') x[k + 'Add'] = add;
+    setOpt(d, key, hsvJSON(x));
+  }
+}
+function eoSetAdd(k, on) {           // ADD on: saturation / brightness are added, so they start at 0
+  const key = eoHsvKey();
+  for (const d of eoList()) { const x = hsvOf(d, key); x[k + 'Add'] = on; x[k] = on ? 0 : 1; setOpt(d, key, hsvJSON(x)); }
+}
+// A slider drag changes the objects while it moves, and the whole drag is one undo step
+function eoLive(k, val) {
+  if (!eo.live) { beginChange(); eo.live = true; }
+  eoSetHsv(k, val);
+  edRebuild(); edRequestDraw();
+  eoHsvShow();
+}
+// Shows the objects' HSV in the open HSV window without building it again. Rebuilding
+// would swap out the button under the pointer, so a click on OK or RESET right after
+// typing in a box (which fires the box's "change" first) would be lost.
+function eoHsvShow() {
+  const pop = $('eoPop'), list = eoList();
+  if (!list.length) return;
+  const xs = list.map(d => hsvOf(d));
+  for (const k of ['h', 's', 'v']) {
+    const v = xs.every(x => x[k] === xs[0][k]) ? xs[0][k] : null;
+    const box = pop.querySelector(`[data-eohsvnum="${k}"]`), range = pop.querySelector(`[data-eohsv="${k}"]`);
+    if (box) { box.value = v === null ? '' : k === 'h' ? String(v) : v.toFixed(2); box.placeholder = v === null ? 'MIXED' : ''; }
+    if (range && v !== null) range.value = String(v);
+  }
+  const after = pop.querySelector('.eo-after');
+  if (after) after.style.background = cssOf(eoPreview(list[0]).after);
+  const btn = pop.querySelector('.eo-hsv-btn');
+  if (btn) btn.classList.toggle('on', list.some(d => parseHsv(optOf(d, eoHsvKey()))));
+}
+function eoLiveEnd() {
+  if (!eo.live) return;
+  eo.live = false;
+  if (snapshot() === ed.pending) { ed.pending = null; edChanged(); } else commitChange();
+}
+function eoPreview(d) {               // the channel's color, and this object's color after HSV
+  const c = ed.cs.resolve(eoChOf(d), 0), x = parseHsv(optOf(d, eoHsvKey()));
+  return { before: c, after: x ? shiftHsv(c, x) : c };
+}
+
+// One channel square: its color, its number (black or white, whichever shows),
+// its opacity under the number when it is see-through, and a dot for blending
+function eoCell(id, cur, label = EO_LABEL[id] ?? String(id)) {
+  const c = ed.cs.resolve(id, 0), light = 0.299 * c.r + 0.587 * c.g + 0.114 * c.b > 150, blend = ed.cs.spec(id).blend;
+  return `<button type="button" class="eo-ch${light ? ' light' : ''}${blend ? ' blend' : ''}" data-eoch="${id}" aria-pressed="${id === cur}"
+    style="background:${cssOf(c)}" title="${EO_NAMES[id] || 'Channel ' + id}${blend ? ' (blending)' : ''}">${label ? `<span class="eo-n o">${label}</span>` : ''}${c.a < 1 ? `<span class="eo-op o">${c.a.toFixed(2)}</span>` : ''}</button>`;
+}
+const eoEmpty = n => '<span class="eo-ch empty" aria-hidden="true"></span>'.repeat(Math.max(0, n));
+function eoHTML(list) {
+  const cur = eoCurrent(list), det = selectedList().some(hasDetail), base = eo.kind !== 'detail';
+  const special = EO_SPECIAL.map(([label, id, look]) => id === -1
+    ? `<button type="button" class="eo-ch eo-d" data-eoch="-1" title="Default: each object goes back to its own color"><span class="eo-n o">D</span></button>`
+    : id ? eoCell(id, cur, label)
+    : `<button type="button" class="eo-ch off" disabled title="Not used in Ship Run" style="background:${cssOf(ed.cs.resolve(look, 0))}"><span class="eo-n o">${label}</span></button>`).join('');
+  const first = eo.page * EO_PER + 1, ids = [];
+  for (let i = first; i < first + EO_PER && i <= 999; i++) ids.push(i);
+  const c = cur ? ed.cs.resolve(cur, 0) : null;
+  const hsvOn = list.some(d => parseHsv(optOf(d, eoHsvKey())));
+  return `<div class="eo-wrap">
+    <button type="button" class="gd-btn eo-base${det ? '' : ' only'}" data-eo="kind" title="${det ? `Switch to the ${base ? 'detail' : 'base'} color` : 'These objects only have a base color'}">${base ? 'BASE' : 'DETAIL'}</button>
+    <div class="gd-panel eo-panel" role="dialog" aria-modal="true" aria-label="Edit object">
+      <div class="eo-head">
+        <button type="button" class="gd-btn eo-hsv-btn${hsvOn ? ' on' : ''}" data-eo="hsv" title="HSV: shift the hue, saturation and brightness of just these objects">HSV<span class="eo-hsv-bar"></span></button>
+        <h2><span class="gold" data-fit>${base ? 'BASE' : 'DETAIL'} COLOR</span></h2>
+        <button type="button" class="cp-info eo-info" data-eo="info" aria-label="What this does">i</button>
+      </div>
+      <div class="eo-board">
+        <div class="eo-sec eo-special"><div class="eo-sec-title"><span class="gold">SPECIAL</span></div><div class="eo-g3">${special}</div></div>
+        <div class="eo-sec eo-chans">
+          <div class="eo-sec-title">
+            <button type="button" class="cp-arrow left eo-arrow" data-eopage="-1" aria-label="Previous page"><svg aria-hidden="true"><use href="#i-tri"/></svg></button>
+            <span class="gold">PAGE ${eo.page + 1} / ${EO_PAGES}</span>
+            <button type="button" class="cp-arrow eo-arrow" data-eopage="1" aria-label="Next page"><svg aria-hidden="true"><use href="#i-tri"/></svg></button>
+          </div>
+          <div class="eo-g7">${ids.map(id => eoCell(id, cur)).join('')}${eoEmpty(EO_PER - ids.length)}</div>
+        </div>
+        <div class="eo-sec eo-recent"><div class="eo-sec-title"><span class="gold">RECENT</span></div>
+          <div class="eo-g3">${eoRecent.map(id => eoCell(id, cur)).join('')}${eoEmpty(EO_RECENT - eoRecent.length)}</div></div>
+      </div>
+      <div class="eo-foot">
+        <div class="eo-free">
+          <button type="button" class="gd-btn gray eg-btn" data-eo="free" title="The lowest channel the level does not use yet, from OFFSET up"><span class="gold">NEXT FREE</span></button>
+          <label class="eg-off"><span class="gold">OFFSET</span><input class="eg-num small" type="number" min="0" max="999" data-eonum="offset" value="${eo.offset || ''}" placeholder="NUM" aria-label="Offset for NEXT FREE"></label>
+        </div>
+        <button type="button" class="gd-btn big eo-ok" data-eo="ok">OK</button>
+        <div class="eo-cur">
+          <span class="gold">${cur ? chLabel(cur) : 'MIXED'}</span>
+          <button type="button" class="eo-swatch" data-eo="edit" style="background:${c ? cssOf(c) : 'linear-gradient(135deg,#fff 50%,#000 50%)'}"
+            title="${!cur ? 'The objects use different channels' : CH_FIXED.has(cur) ? 'This channel never changes' : 'Change the color of channel ' + chLabel(cur)}" aria-label="Edit this channel's color"></button>
+        </div>
+      </div>
+    </div>
+    <div class="eg-side eo-side">
+      <button type="button" class="gd-btn gray eg-side-btn" data-eo="copy" title="Copy the color and HSV of the selected object"><span class="gold">COPY</span></button>
+      <button type="button" class="gd-btn gray eg-side-btn" data-eo="paste" title="Paste the copied color onto the selection"${eo.clip ? '' : ' disabled'}><span class="gold">PASTE</span></button>
+    </div>
+  </div>${eo.hsv ? eoHsvHTML(list) : ''}`;
+}
+// The HSV window, over the color window
+function eoHsvHTML(list) {
+  const xs = list.map(d => hsvOf(d)), sh = k => xs.every(x => x[k] === xs[0][k]) ? xs[0][k] : null;
+  const p = eoPreview(list[0]);
+  const row = (k, label) => {
+    const v = sh(k), add = k === 'h' ? null : sh(k + 'Add');
+    const [lo, hi, step] = k === 'h' ? [-180, 180, 1] : add ? [-1, 1, 0.01] : [0, 2, 0.01];
+    const none = k === 'h' || add ? 0 : 1;
+    return `<div class="eo-hrow">
+      <span class="gold">${label}</span>
+      <input type="range" class="gd-range eo-range" data-eohsv="${k}" min="${lo}" max="${hi}" step="${step}" value="${v ?? none}" aria-label="${label}">
+      <input class="eg-num small" type="number" data-eohsvnum="${k}" min="${lo}" max="${hi}" step="${step}" value="${v === null ? '' : k === 'h' ? v : v.toFixed(2)}" placeholder="${v === null ? 'MIXED' : ''}" aria-label="${label}">
+      ${k === 'h' ? '<span></span>' : `<label class="gd-toggle" title="Add to the ${label.toLowerCase()} (-1 to 1) instead of multiplying it (0 to 2)"><input type="checkbox" class="gd-check" data-eoadd="${k}"${add ? ' checked' : ''}${add === null ? ' data-some' : ''}> ADD</label>`}
+    </div>`;
+  };
+  return `<div class="eo-hsv-back" data-eo="hsvback">
+    <div class="gd-panel eo-hsv" role="dialog" aria-modal="true" aria-label="HSV">
+      <h3><span class="gold">${eo.kind === 'detail' ? 'DETAIL' : 'BASE'} HSV</span></h3>
+      <div class="eo-prev"><span class="eo-sw" style="background:${cssOf(p.before)}" title="The channel's color"></span><svg class="eo-to" aria-hidden="true"><use href="#i-tri"/></svg><span class="eo-sw eo-after" style="background:${cssOf(p.after)}" title="This object's color"></span></div>
+      ${row('h', 'HUE')}${row('s', 'SATURATION')}${row('v', 'BRIGHTNESS')}
+      <p class="eg-note">Changes the color of just the selected objects, not the whole channel.</p>
+      <div class="btn-row"><button type="button" class="gd-btn gray" data-eo="hsvreset">RESET</button><button type="button" class="gd-btn" data-eo="hsvok">OK</button></div>
+    </div>
+  </div>`;
+}
+// Escape: the HSV window first, then this one
+function eoBack() { if (eo.hsv) { eoLiveEnd(); eo.hsv = false; eoRender(); } else closeEditObject(); }
+$('eoPop').addEventListener('click', e => {
+  eoLiveEnd();                         // a slider drag that never got its "change" ends here
+  if (e.target.id === 'eoPop') { closeEditObject(); return; }
+  if (e.target.dataset.eo === 'hsvback') { eoBack(); return; }
+  const b = e.target.closest('button'); if (!b || b.disabled) return;
+  const d = b.dataset;
+  if (d.eoch) eoApply(Number(d.eoch));
+  else if (d.eopage) { eo.page = (eo.page + Number(d.eopage) + EO_PAGES) % EO_PAGES; eoRender(); }
+  else if (d.eo === 'kind') {
+    if (!selectedList().some(hasDetail)) { toast('These objects only have a base color.'); return; }
+    eo.kind = eo.kind === 'detail' ? 'main' : 'detail'; eoShowPage(); eoRender();
+  }
+  else if (d.eo === 'free') { const id = nextFreeChannel(eo.offset); eo.page = Math.floor((id - 1) / EO_PER); eoApply(id); }
+  else if (d.eo === 'edit') {
+    const id = eoCurrent();
+    if (!id) toast('These objects use different channels. Pick one for all of them first.');
+    else if (CH_FIXED.has(id)) toast('Black, white and the player colors never change.');
+    else openColorPop({ mode: 'channel', id, back: 'eobj' });
+  }
+  else if (d.eo === 'copy') { eoCopy(); eoRender(); }
+  else if (d.eo === 'paste') { eoPaste(); eoRender(); }
+  else if (d.eo === 'hsv') { eo.hsv = true; eoRender(); }
+  else if (d.eo === 'hsvok') { eo.hsv = false; eoRender(); }
+  else if (d.eo === 'hsvreset') { const key = eoHsvKey(); egChange(() => { for (const x of eoList()) setOpt(x, key, null); }); eoRender(); }
+  else if (d.eo === 'ok') closeEditObject();
+  else if (d.eo === 'info') showInfo(`Click a channel to give it to the ${eo.kind === 'detail' ? 'detail color' : 'color'} of the selected objects. D puts each back to its own. `
+    + 'Color triggers change a channel, and every object on it changes too. The square at the bottom right edits the channel; HSV changes just these objects.');
+});
+$('eoPop').addEventListener('input', e => {
+  const t = e.target;
+  if (t.dataset.eonum === 'offset') eo.offset = intIn(t.value, 0, 999, 0);
+  else if (t.dataset.eohsv) eoLive(t.dataset.eohsv, Number(t.value));
+});
+$('eoPop').addEventListener('change', e => {
+  const t = e.target, d = t.dataset;
+  if (d.eohsv) { eoLiveEnd(); eoHsvShow(); return; }
+  if (d.eoadd) { egChange(() => eoSetAdd(d.eoadd, t.checked)); eoRender(); return; }
+  if (!d.eohsvnum) return;
+  const v = Number(t.value);
+  if (t.value.trim() !== '' && Number.isFinite(v)) egChange(() => eoSetHsv(d.eohsvnum, d.eohsvnum === 'h' ? Math.round(v) : v));
+  eoHsvShow();
+});
+
+// --- the EDIT GROUP window (laid out like Geometry Dash's) ---
+// Editor layers, group IDs, Z layer and Z order, and the EXTRA / EXTRA2 tabs.
+// It works on the whole selection: a box shows the value every selected object
+// shares (blank when they differ), and only what you change is written.
+// Every change is one undo step.
+const eg = { tab: 'main', id: 0, offset: 0, clip: null };
+// The Extra tab: [setting, label, does something in Ship Run]
+const EXTRA_FLAGS = [
+  ['dontFade', 'DONT FADE'], ['dontEnter', 'DONT ENTER'], ['noEffects', 'NO EFFECTS'], ['parent', 'GROUP PARENT', true],
+  ['areaParent', 'AREA PARENT'], ['dontBoostY', 'DONT BOOST Y'], ['dontBoostX', 'DONT BOOST X'], ['highDetail', 'HIGH DETAIL', true],
+  ['noTouch', 'NOTOUCH', true], ['passable', 'PASSABLE'], ['hide', 'HIDE', true], ['nonStickX', 'NONSTICKX'],
+  ['nonStickY', 'NONSTICKY'], ['extraSticky', 'EXTRASTICKY'], ['extendedCollision', 'EXTENDED COLLISION'], ['iceBlock', 'ICEBLOCK'],
+  ['gripSlope', 'GRIPSLOPE'], ['noGlow', 'NOGLOW', true], ['scaleStick', 'SCALESTICK'], ['noParticle', 'NOPARTICLE'],
+  ['centerEffect', 'CENTER EFFECT'], ['singlePTouch', 'SINGLE PTOUCH'], ['noAudioScale', 'NO AUDIO SCALE'],
+];
+const FLAG_KEYS = EXTRA_FLAGS.filter(f => f[2] && f[0] !== 'parent').map(f => f[0]);     // hide, noTouch, highDetail, noGlow
+const FLAG_HELP = {
+  parent: 'Makes this object the parent of its group (shown pink). Same as the P button.',
+  highDetail: 'Hidden while playing when LOW DETAIL MODE is on in Settings.',
+  noTouch: 'The ship goes straight through it: no crash, no landing, and portals, pads, orbs, coins and touch triggers do nothing.',
+  hide: 'Not drawn while playing, but it still works. The editor shows it faint.',
+  noGlow: 'No soft white edge around black saws.',
+};
+const EG_INFO = {
+  main: 'EDITOR L and L2: the editor layers the objects are on (the pink arrows under GO TO LAYER). Z LAYER: B layers are drawn behind the ship, T layers in front. Z ORDER: higher is drawn on top inside a Z layer. Alpha triggers fade group IDs.',
+  extra: 'Ticked boxes change every selected object. Grey ones are Geometry Dash options that Ship Run does not use.',
+  extra2: 'Special IDs are saved with the level for later. Nothing in Ship Run uses them yet.',
+};
+const optOf = (d, k) => (optsOf(d) || {})[k];
+const groupsOf = d => ed.byDef.get(d).groups;
+const parentOf = d => { const p = Math.round(Number(optOf(d, 'parent'))); return groupsOf(d).includes(p) ? p : 0; };
+const zKeyOf = d => Z_LAYERS.includes(optOf(d, 'zLayer')) ? optOf(d, 'zLayer') : '';     // '' = DEFAULT
+// The number boxes: how to read one setting and write it (0 or the default leaves it out of levels.js).
+// "only" = the objects it is for (ORD, CH and Control ID are only for gameplay objects and triggers).
+const forGameplay = d => isGameplay(d[0]);
+const EG_NUM = {
+  L:  { get: d => ed.byDef.get(d).edL, set: (d, v) => setOpt(d, 'editorL', v === layerDefault(d[0]) ? null : v), lo: 0, hi: EDITOR_LAYER_MAX },
+  L2: { get: d => ed.byDef.get(d).edL2, set: (d, v) => setOpt(d, 'editorL2', v || null), lo: 0, hi: EDITOR_LAYER_MAX },
+  Z:  { get: d => ed.byDef.get(d).zOrder, set: (d, v) => setOpt(d, 'zOrder', v || null), lo: -Z_ORDER_MAX, hi: Z_ORDER_MAX },
+};
+for (const k of ['ord', 'gch', 'enterCh', 'material', 'controlId']) {
+  EG_NUM[k] = { get: d => intIn(optOf(d, k), -9999, 9999, 0), set: (d, v) => setOpt(d, k, v || null),
+    lo: k === 'ord' ? -9999 : 0, hi: 9999, only: k === 'ord' || k === 'gch' || k === 'controlId' ? forGameplay : null };
+}
+// What COPY / PASTE carry over (EDITOR L is copied as a number, since its default depends on the object)
+const EG_COPY = ['editorL2', 'zOrder', 'zLayer', 'groups', 'parent', 'ord', 'gch', 'enterCh', 'material', 'controlId', ...FLAG_KEYS];
+const GAMEPLAY_ONLY = new Set(['ord', 'gch', 'controlId']);
+// What a trigger's own window keeps when it writes the trigger again
+const EG_KEEP = ['editorL', ...EG_COPY];
+
+function egShared(list, f) { const v = f(list[0]); return list.every(d => f(d) === v) ? v : null; }    // null = they differ
+// One undo step, and only when something really changed
+function egChange(fn) { edChange(() => { fn(); return snapshot() !== ed.pending; }); }
+function egSetNum(k, v, rel) {          // rel: the arrows add v to each object's own value
+  const f = EG_NUM[k], list = selectedList().filter(d => !f.only || f.only(d));
+  egChange(() => { for (const d of list) f.set(d, Math.max(f.lo, Math.min(f.hi, rel ? f.get(d) + v : v))); });
+}
+function egSetZ(z) { egChange(() => { for (const d of selectedList()) setOpt(d, 'zLayer', z || null); }); }
+// The - and + next to Z LAYER (when the selection is on different Z layers): one step down or up
+function egStepZ(dir) {
+  egChange(() => {
+    for (const d of selectedList()) {
+      const r = zKeyOf(d) ? Z_LAYERS.indexOf(zKeyOf(d)) : Z_DEFAULT;
+      setOpt(d, 'zLayer', Z_LAYERS[Math.max(0, Math.min(Z_LAYERS.length - 1, r + dir))]);
+    }
+  });
+}
+// ADD (and P: the group parent, pink). An object can have at most MAX_GROUPS group IDs.
+function egAddGroup(asParent) {
+  const id = eg.id, list = selectedList();
+  if (!(id >= 1 && id <= 9999)) return toast('Type a group ID from 1 to 9999 first, or press NEXT FREE.');
+  let full = 0;
+  egChange(() => {
+    for (const d of list) {
+      const g = groupsOf(d);
+      if (!g.includes(id)) {
+        if (g.length >= MAX_GROUPS) { full++; continue; }
+        setOpt(d, 'groups', [...g, id]);
+      }
+      if (asParent) setOpt(d, 'parent', parentOf(d) === id ? null : id);
+    }
+  });
+  if (full) toast(list.length === 1 ? `This object already has ${MAX_GROUPS} group IDs, the most it can have.`
+    : `${full} of the objects already had ${MAX_GROUPS} group IDs (the most), so they did not get ${id}.`);
+}
+// Clicking a group ID in the list takes it off every selected object
+function egRemoveGroup(id) {
+  egChange(() => {
+    for (const d of selectedList()) {
+      const g = groupsOf(d);
+      if (g.includes(id)) setOpt(d, 'groups', g.length > 1 ? g.filter(x => x !== id) : null);
+      if (Math.round(Number(optOf(d, 'parent'))) === id) setOpt(d, 'parent', null);
+    }
+  });
+}
+function egSetFlag(k, on) {
+  const list = selectedList();
+  if (k === 'parent') {                 // one object: parent of its first group (or the one it already is)
+    const d = list[0], g = groupsOf(d);
+    if (on && !g.length) return toast('Add a group ID first. The object becomes the parent of that group.');
+    egChange(() => setOpt(d, 'parent', on ? (parentOf(d) || g[0]) : null));
+    return;
+  }
+  egChange(() => { for (const d of list) setOpt(d, k, on ? true : null); });
+}
+function freeEnterChannel() {
+  const used = new Set(ed.level.objects.map(d => intIn(optOf(d, 'enterCh'), 0, 9999, 0)));
+  for (let i = 1; i < 10000; i++) if (!used.has(i)) return i;
+  return 1;
+}
+function egCopy() {
+  const d = selectedList()[0];
+  eg.clip = { edL: ed.byDef.get(d).edL, op: Object.fromEntries(EG_COPY.map(k => [k, optOf(d, k) == null ? null : clone(optOf(d, k))])) };
+  toast(ed.sel.size > 1 ? 'Copied the settings of the first selected object.' : 'Settings copied. Select other objects and press PASTE.');
+}
+function egPaste() {
+  const c = eg.clip, list = selectedList();
+  if (!c) return;
+  egChange(() => {
+    for (const d of list) {
+      setOpt(d, 'editorL', c.edL === layerDefault(d[0]) ? null : c.edL);
+      for (const k of EG_COPY) {
+        if ((GAMEPLAY_ONLY.has(k) && !isGameplay(d[0])) || (k === 'parent' && list.length > 1)) continue;
+        setOpt(d, k, c.op[k] == null ? null : clone(c.op[k]));
+      }
+      const p = optOf(d, 'parent');        // a parent must be one of the object's own groups
+      if (p != null && !(optOf(d, 'groups') || []).map(Number).includes(Number(p))) setOpt(d, 'parent', null);
+    }
+  });
+  toast(`Pasted onto ${list.length} object${list.length > 1 ? 's' : ''}.`);
+}
+
+const egArrow = (color, attrs, label, right) => `<button type="button" class="eg-arrow${right ? ' right' : ''}" ${attrs} aria-label="${label}"><svg aria-hidden="true"><use href="#i-page${color}"/></svg></button>`;
+function egStepper(k, val, color, label) {
+  return `<div class="eg-step">${egArrow(color, `data-egstep="${k}" data-dir="-1"`, label + ': less')}
+    <input class="eg-num" type="number" data-egnum="${k}" value="${val === null ? '' : val}" placeholder="${val === null ? 'MIXED' : ''}" aria-label="${label}">
+    ${egArrow(color, `data-egstep="${k}" data-dir="1"`, label + ': more', true)}</div>`;
+}
+const egPlus = (k, title) => `<button type="button" class="cp-plus eg-plus" data-egplus="${k}" title="${title}" aria-label="${title}">+</button>`;
+function egMainHTML(list) {
+  const sh = f => egShared(list, f), one = list.length === 1, play = list.every(forGameplay);
+  // the group list: one chip per ID (pink = parent, dimmer = only some of the selected objects have it)
+  const ids = [];
+  for (const d of list) for (const g of groupsOf(d)) if (!ids.includes(g)) ids.push(g);
+  const chips = ids.map(g => {
+    const all = list.every(d => groupsOf(d).includes(g)), par = list.every(d => parentOf(d) === g);
+    return `<button type="button" class="eg-chip o${par ? ' parent' : ''}${all ? '' : ' some'}" data-eggroup="${g}" title="Click to remove group ${g}${all ? '' : ' (only some of the selected objects have it)'}">${g}</button>`;
+  }).join('');
+  const z = sh(zKeyOf), tile = sh(d => Math.max(0, 9 - ed.byDef.get(d).layer));
+  const zStep = dir => z === null ? `<button type="button" class="eg-zstep" data-egzstep="${dir}" title="Move every selected object one Z layer ${dir < 0 ? 'down' : 'up'}" aria-label="Z layer ${dir < 0 ? 'down' : 'up'}">${dir < 0 ? '−' : '+'}</button>` : '';
+  const small = (k, label) => `<label class="eg-small"><span class="gold">${label}</span><input class="eg-num small" type="number" data-egnum="${k}" value="${sh(EG_NUM[k].get) ?? ''}" placeholder="${sh(EG_NUM[k].get) === null ? 'MIXED' : ''}" aria-label="${label}"></label>`;
+  return `<div class="eg-top">
+      <div class="eg-field"><div class="eg-title"><span class="gold">EDITOR L</span>${egPlus('L', 'The lowest layer with no objects on it')}</div>${egStepper('L', sh(EG_NUM.L.get), '', 'Editor layer')}</div>
+      <div class="eg-field"><div class="eg-title"><span class="gold">EDITOR L2</span>${egPlus('L2', 'The lowest layer with no objects on it')}</div>${egStepper('L2', sh(EG_NUM.L2.get), '-pink', 'Second editor layer (0 = none)')}</div>
+      <div class="eg-field"><div class="eg-title"><span class="gold">Z ORDER</span></div>${egStepper('Z', sh(EG_NUM.Z.get), '', 'Z order')}</div>
+    </div>
+    <div class="eg-title"><span class="gold">ADD GROUP ID</span></div>
+    <div class="eg-add">
+      <button type="button" class="gd-btn gray small eg-btn" data-eg="free" title="The lowest group ID the level does not use yet, from OFFSET up"><span class="gold">NEXT FREE</span></button>
+      <label class="eg-off"><span class="gold">OFFSET</span><input class="eg-num small" type="number" min="0" max="9999" data-egnum="offset" value="${eg.offset || ''}" placeholder="NUM" aria-label="Offset for NEXT FREE"></label>
+      ${egStepper('id', eg.id, '-green', 'Group ID')}
+      <button type="button" class="gd-btn gray eg-btn" data-eg="add" title="Give the selected objects this group ID (${MAX_GROUPS} at most)"><span class="gold">ADD</span></button>
+      ${one ? '<button type="button" class="gd-btn gray eg-btn" data-eg="parent" title="Make this object the parent of this group (pink)"><span class="gold">P</span></button>' : ''}
+    </div>
+    <div class="eg-groups" aria-label="Group IDs">${chips}</div>
+    ${play ? `<div class="eg-ordch">${small('ord', 'ORD')}${small('gch', 'CH')}</div>` : ''}
+    <div class="eg-zhead">${zStep(-1)}<span class="gold">Z LAYER</span>${zStep(1)}<span class="eg-tile">${tile === null ? '' : '(' + tile + ')'}</span></div>
+    <div class="eg-zrow">${[...Z_LAYERS, ''].map(k => `<button type="button" class="gd-btn gray small eg-z${k ? '' : ' wide'}" data-egz="${k}" aria-pressed="${z === k}">${k || 'DEFAULT'}</button>`).join('')}</div>`;
+}
+function egExtraHTML(list) {
+  const one = list.length === 1;
+  return `<div class="eg-title"><span class="gold">EXTRA</span></div>
+    <div class="eg-flags">${EXTRA_FLAGS.map(([k, label, works]) => {
+      if (!works) return `<label class="gd-toggle eg-flag off" title="Not used in Ship Run"><input type="checkbox" class="gd-check" disabled> ${label}</label>`;
+      if (k === 'parent') return `<label class="gd-toggle eg-flag${one ? '' : ' off'}" title="${one ? FLAG_HELP.parent : 'Select just one object to make it a group parent'}">
+        <input type="checkbox" class="gd-check" data-egflag="parent"${one && parentOf(list[0]) ? ' checked' : ''}${one ? '' : ' disabled'}> ${label}</label>`;
+      const n = list.filter(d => !!optOf(d, k)).length;
+      return `<label class="gd-toggle eg-flag" title="${FLAG_HELP[k]}"><input type="checkbox" class="gd-check" data-egflag="${k}"${n === list.length ? ' checked' : ''}${n && n < list.length ? ' data-some' : ''}> ${label}</label>`;
+    }).join('')}</div>`;
+}
+function egExtra2HTML(list) {
+  const sh = f => egShared(list, f);
+  const row = (k, title, plus) => `<div class="eg-field"><div class="eg-title"><span class="gold">${title}</span>${plus ? egPlus(k, 'The lowest enter channel not used yet') : ''}</div>${egStepper(k, sh(EG_NUM[k].get), '', title)}</div>`;
+  return `<div class="eg-title"><span class="gold">EXTRA 2</span></div>
+    <div class="eg-top">${row('enterCh', 'ENTER CHANNEL', true)}${row('material', 'MATERIAL')}${list.every(forGameplay) ? row('controlId', 'CONTROL ID') : ''}</div>
+    <p class="eg-note">Special IDs for triggers. They are saved with the level, but nothing in Ship Run uses them yet.</p>`;
+}
+function egHTML(list) {
+  const body = eg.tab === 'extra' ? egExtraHTML(list) : eg.tab === 'extra2' ? egExtra2HTML(list) : egMainHTML(list);
+  const side = (k, label, attrs) => `<button type="button" class="gd-btn gray eg-side-btn" data-eg="${k}" ${attrs}><span class="gold">${label}</span></button>`;
+  return `<div class="eg-wrap">
+    <div class="gd-panel eg-panel" role="dialog" aria-modal="true" aria-label="Edit group">
+      <button type="button" class="cp-info eg-info" data-eg="info" aria-label="What this does">i</button>
+      ${body}
+      <button type="button" class="gd-btn big eg-ok" data-eg="ok">OK</button>
+    </div>
+    <div class="eg-side">
+      ${side('copy', 'COPY', 'title="Copy these settings from the selected object"')}
+      ${side('paste', 'PASTE', `title="Paste the copied settings onto the selection"${eg.clip ? '' : ' disabled'}`)}
+      ${side('extra', 'EXTRA', `aria-pressed="${eg.tab === 'extra'}"`)}
+      ${side('extra2', 'EXTRA2', `aria-pressed="${eg.tab === 'extra2'}"`)}
+      ${side('anim', 'ANIM', 'disabled title="Ship Run has no animated objects"')}
+    </div>
+  </div>`;
+}
+function openEditGroup() {
+  if (!ed.sel.size) return toast('Select something first: click an object in Edit mode.');
+  eg.tab = 'main';
+  $('egPop').hidden = false;
+  egRender();
+}
+function egRender() {
+  const pop = $('egPop'), list = selectedList();
+  if (pop.hidden) return;
+  if (!list.length) { closeEditGroup(); return; }
+  pop.innerHTML = egHTML(list);
+  pop.querySelectorAll('[data-some]').forEach(c => { c.indeterminate = true; });
+  fitText(pop);
+  placeToast();
+}
+function closeEditGroup() {
+  const pop = $('egPop');
+  if (pop.hidden) return;
+  pop.hidden = true; pop.innerHTML = '';
+  edPruneSel(); edSelChanged();         // objects moved off the layer you are on drop out of the selection
+}
+$('egPop').addEventListener('click', e => {
+  if (e.target.id === 'egPop') { closeEditGroup(); return; }
+  const b = e.target.closest('button'); if (!b || b.disabled) return;
+  const d = b.dataset;
+  if (d.egstep === 'id') eg.id = Math.max(0, Math.min(9999, eg.id + Number(d.dir)));
+  else if (d.egstep) egSetNum(d.egstep, Number(d.dir), true);
+  else if (d.egplus) egSetNum(d.egplus, d.egplus === 'enterCh' ? freeEnterChannel() : freeEditorLayer(d.egplus === 'L2' ? 1 : 0));
+  else if (d.eggroup) egRemoveGroup(Number(d.eggroup));
+  else if (d.egzstep) egStepZ(Number(d.egzstep));
+  else if (d.egz != null) egSetZ(d.egz);
+  else if (d.eg === 'free') eg.id = nextFreeGroup(eg.offset);
+  else if (d.eg === 'add') egAddGroup(false);
+  else if (d.eg === 'parent') egAddGroup(true);
+  else if (d.eg === 'copy') egCopy();
+  else if (d.eg === 'paste') egPaste();
+  else if (d.eg === 'extra' || d.eg === 'extra2') eg.tab = eg.tab === d.eg ? 'main' : d.eg;
+  else if (d.eg === 'info') { showInfo(EG_INFO[eg.tab]); return; }
+  else if (d.eg === 'ok') { if (eg.tab === 'main') { closeEditGroup(); return; } eg.tab = 'main'; }
+  else return;
+  egRender();
+});
+// The group ID and OFFSET boxes only belong to this window; the other boxes change the objects
+$('egPop').addEventListener('input', e => {
+  const k = e.target.dataset.egnum;
+  if (k === 'id') eg.id = intIn(e.target.value, 0, 9999, 0);
+  else if (k === 'offset') eg.offset = intIn(e.target.value, 0, 9999, 0);
+});
+$('egPop').addEventListener('change', e => {
+  const t = e.target;
+  if (t.dataset.egflag) { egSetFlag(t.dataset.egflag, t.checked); egRender(); return; }
+  const k = t.dataset.egnum, f = EG_NUM[k];
+  if (!f) return;
+  const v = Math.round(Number(t.value));
+  if (t.value.trim() !== '' && Number.isFinite(v)) egSetNum(k, v);
+  // show what the objects have now (the box stays, so a click on the next button still lands)
+  const list = selectedList().filter(d => !f.only || f.only(d)), cur = list.length ? egShared(list, f.get) : null;
+  t.value = cur === null ? '' : String(cur);
+  t.placeholder = cur === null ? 'MIXED' : '';
+});
+
 // double-click a trigger in Edit mode to open it
 edCanvas.addEventListener('dblclick', e => {
   if (ed.mode !== 'edit') return;
@@ -3252,6 +3938,9 @@ function edOpenHelp() {
       <dt>EDIT BUTTONS</dt><dd>In Edit mode the bottom bar moves by 1 block, half, 1/15, one pixel or 1/30, and flips the selection</dd>
       <dt>SHIFT + CLICK</dt><dd>Add to the selection</dd>
       <dt>DOUBLE-CLICK</dt><dd>Open a color or alpha trigger (Edit mode). Or select it and press EDIT TRIGGER.</dd>
+      <dt>EDIT GROUP</dt><dd>Editor layers, group IDs (for alpha triggers), Z layer (B = behind the ship, T = in front) and Z order, plus EXTRA options like Hide and NoTouch</dd>
+      <dt>EDIT OBJECT</dt><dd>The color channel of the selection (BASE / DETAIL switches color), and HSV to shift the color of just those objects. A trigger opens its own window.</dd>
+      <dt>LAYERS</dt><dd>The pink arrows switch editor layer: on a layer you can only select and delete its objects, and new objects go on it. Click the number to lock the layer. The blue arrow shows ALL layers, and GO TO LAYER jumps to the selected object's layer.</dd>
       <dt>CTRL + C / V / D</dt><dd>Copy, paste in the middle of the screen, copy + paste in place</dd>
       <dt>CTRL + A</dt><dd>Select everything</dd>
       <dt>CTRL + Z / Y</dt><dd>Undo, redo</dd>
@@ -3406,8 +4095,22 @@ function edAction(act) {
   else if (act === 'selall') edSelectWhere(() => true);
   else if (act === 'deselect') edDeselect();
   else if (act === 'del') edDeleteSel();
+  else if (act === 'egroup') openEditGroup();
+  else if (act === 'eobject') openEditObject();
+  else if (act === 'golayer') edGoToLayer();
 }
-$('edActions').addEventListener('click', e => { const b = e.target.closest('[data-act]'); if (b) edAction(b.dataset.act); });
+$('edActions').addEventListener('click', e => {
+  const b = e.target.closest('[data-act]');
+  if (b) { edAction(b.dataset.act); return; }
+  const l = e.target.closest('[data-layer]');
+  if (l) edLayerButton(l.dataset.layer);
+});
+// the editor layer row: blue arrow = ALL, pink arrows = layer down / up, the number = lock
+function edLayerButton(a) {
+  if (a === 'all') edSetLayer(-1);
+  else if (a === 'lock') edToggleLock();
+  else edLayerStep(Number(a));
+}
 $('edToggles').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   if (b.dataset.act) { edAction(b.dataset.act); return; }
@@ -3666,7 +4369,26 @@ function armConfirm(btn, label, fn) {
 let toastTimer = 0;
 function toast(msg) {
   const t = $('toast'); t.textContent = msg; t.hidden = false;
+  placeToast();
   clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 3400);
+}
+// While EDIT GROUP or EDIT OBJECT is open, a message goes to the top of the screen, off the window, or
+// to the bottom when that hides fewer of its buttons (on a phone the window fills the screen)
+function placeToast() {
+  const t = $('toast'), pop = [$('egPop'), $('eoPop')].find(p => !p.hidden);
+  t.classList.toggle('over', !!pop); t.classList.remove('under');
+  if (!pop || t.hidden) return;
+  const covered = () => {
+    const r = t.getBoundingClientRect();
+    return [...pop.querySelectorAll('button, input')].filter(b => {
+      const q = b.getBoundingClientRect();
+      return q.width && q.left < r.right && q.right > r.left && q.top < r.bottom && q.bottom > r.top;
+    }).length;
+  };
+  const atTop = covered();
+  if (!atTop) return;
+  t.classList.add('under');
+  if (covered() >= atTop) t.classList.remove('under');
 }
 
 // --- the Settings menu ---
@@ -3676,6 +4398,7 @@ const GAME_SETTINGS = [
   ['showPercent', 'PERCENTAGE', 'The number next to the progress bar.'],
   ['showAttempts', 'ATTEMPT COUNTER', 'The "Attempt 3" text at the start of each try.'],
   ['showLevelName', 'LEVEL NAME', 'The level name in the top-left corner while you play.'],
+  ['lowDetail', 'LOW DETAIL MODE', 'Hides the extra decoration a level marks as High Detail. Can help the game run smoothly on slow devices.'],
 ];
 // Graphics: which art to use, and how sharp (bigger sheets look sharper but take longer to load)
 const CHOICES = [
@@ -3757,6 +4480,8 @@ $('edScroll').addEventListener('change', e => e.target.blur());
 window.addEventListener('keydown', e => {
   if (!$('colorPop').hidden) { if (e.key === 'Escape') closeColorPop(); return; }
   if (!$('modal').hidden) { if (e.key === 'Escape') hideModal(); return; }
+  if (!$('egPop').hidden) { if (e.key === 'Escape') closeEditGroup(); return; }
+  if (!$('eoPop').hidden) { if (e.key === 'Escape') eoBack(); return; }
   if (screen === 'play') {
     if (e.code === 'Space' || e.code === 'ArrowUp') {
       e.preventDefault();
