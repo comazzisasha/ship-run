@@ -349,21 +349,23 @@ const SAW_LOOKS = {
 };
 const sawLook = o => SAW_LOOKS[o.design || 'sawblade_01'];
 // Outline pieces: sprite, centre height, the white parts as boxes [left, bottom, right, top]
-// (0..1 inside the square), and whether it fades like an outline spike.
-// Hitboxes are never thinner than LINE_T, so a fast ship cannot slip through a line.
-const LINE_T = 0.15;
+// (0..1 inside the square, measured from the sprites: a line is 3 of 60 pixels, LW), and
+// whether it fades like an outline spike. A box narrower than LINE_T from side to side is
+// widened evenly around its middle: at quad speed the ship moves 8.5 pixels a step, and its
+// 6 pixel inner hitbox could jump right over a thinner wall.
+const LINE_T = 0.15, LW = 3 / 60;
 const OUTLINE_PIECES = {
   1:  ['blockOutline_01_001', 0.5, [[0, 0, 1, 1]]],
-  2:  ['blockOutline_02_001', 1 - 1.5 / 60, [[0, 1 - LINE_T, 1, 1]]],
-  3:  ['blockOutline_03_001', 0.5, [[0, 1 - LINE_T, 1, 1], [0, 0, LINE_T, 1 - LINE_T]]],
-  4:  ['blockOutline_04_001', 0.5, [[0, 1 - LINE_T, 1, 1], [0, 0, LINE_T, 1 - LINE_T], [1 - LINE_T, 0, 1, 1 - LINE_T]]],
-  5:  ['blockOutline_05_001', 0.5, [[0, 0, LINE_T, 1]]],
-  6:  ['blockOutline_06_001', 0.5, [[0, 1 - LINE_T, LINE_T, 1]]],
-  7:  ['blockOutline_07_001', 0.5, [[0, 1 - LINE_T, LINE_T, 1]]],
-  8:  ['blockOutline_08_001', 0.5, [[0, 1 - LINE_T, LINE_T, 1]]],
-  9:  ['blockOutline_09_001', 1 - 1.5 / 60, [[0, 1 - LINE_T, 1, 1]]],
-  10: ['invisibleOutline_01_001', 1 - 1.5 / 60, [[0, 1 - LINE_T, 1, 1]], true],
-  11: ['invisibleOutline_b_01_001', 1 - 3 / 60, [[0, 1 - LINE_T, 1, 1]], true],
+  2:  ['blockOutline_02_001', 1 - 1.5 / 60, [[0, 1 - LW, 1, 1]]],
+  3:  ['blockOutline_03_001', 0.5, [[0, 1 - LW, 1, 1], [0, 0, LW, 1 - LW]]],
+  4:  ['blockOutline_04_001', 0.5, [[0, 1 - LW, 1, 1], [0, 0, LW, 1 - LW], [1 - LW, 0, 1, 1 - LW]]],
+  5:  ['blockOutline_05_001', 0.5, [[0, 0, LW, 1]]],
+  6:  ['blockOutline_06_001', 0.5, [[0, 1 - LW, LW, 1]]],
+  7:  ['blockOutline_07_001', 0.5, [[0, 1 - 4 / 60, 4 / 60, 1]]],
+  8:  ['blockOutline_08_001', 0.5, [[0, 1 - LW, 6 / 60, 1]]],
+  9:  ['blockOutline_09_001', 1 - 1.5 / 60, [[0, 1 - LW, 1, 1]]],
+  10: ['invisibleOutline_01_001', 1 - 1.5 / 60, [[0, 1 - LW, 1, 1]], true],
+  11: ['invisibleOutline_b_01_001', 1 - 3 / 60, [[0, 1 - 2 * LW, 1, 1]], true],
 };
 const OUTLINE_MAX = 11;
 // Deco that is placed off-centre in its square (slabs sit at the top, fake spikes on the floor)
@@ -431,6 +433,8 @@ function makeObject(def, colOffset = 0, idx = 0) {
         if (o.flip) [u0, u1] = [1 - u1, 1 - u0];
         const pts = [[u0, v0], [u1, v1]].map(([u, v]) => turn ? rotatePoint([o.x + u * g, o.y - v * g], c, turn) : [o.x + u * g, o.y - v * g]);
         const box = { l: Math.min(pts[0][0], pts[1][0]), r: Math.max(pts[0][0], pts[1][0]), t: Math.min(pts[0][1], pts[1][1]), b: Math.max(pts[0][1], pts[1][1]) };
+        const short = LINE_T * g - (box.r - box.l);
+        if (short > 0) { box.l -= short / 2; box.r += short / 2; }
         return { box, poly: boxPoly(box.l, box.t, box.r, box.b) };
       });
       o.box = o.parts[0].box; o.hit = { poly: o.parts[0].poly };
