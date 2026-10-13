@@ -870,7 +870,10 @@ for (const [k, src] of Object.entries(IMAGES)) {
 let imgTimer = 0;
 function imagesChanged() {
   clearTimeout(imgTimer);
-  imgTimer = setTimeout(() => { if (typeof renderPalette === 'function' && ed) { renderPaletteTabs(); renderPalette(); edRequestDraw(); } }, 50);
+  imgTimer = setTimeout(() => {
+    if (typeof renderPalette === 'function' && ed) { renderPaletteTabs(); renderPalette(); edRequestDraw(); }
+    if (typeof renderKitTile === 'function') renderKitTile();
+  }, 50);
 }
 
 // --- Geometry Dash sprite sheets ---------------------------------------
@@ -920,17 +923,22 @@ function sprCanvas(name) {
   if (c !== undefined) return c;
   const f = sprFrame(name), sh = f && SPR.sheets[f[0]];
   if (!f || !sh) { SPR.cache.set(name, null); return null; }
-  const [, x, y, w, h, rot, sw, sh2, ox, oy] = f;
-  c = document.createElement('canvas');
-  c.width = Math.max(1, Math.round(sw)); c.height = Math.max(1, Math.round(sh2));
-  const cx = c.getContext('2d');
-  const px = (sw - w) / 2 + ox, py = (sh2 - h) / 2 - oy;
-  if (rot) {              // stored turned a quarter clockwise: turn it back
-    cx.translate(px + w / 2, py + h / 2); cx.rotate(-Math.PI / 2);
-    cx.drawImage(sh.im, x, y, h, w, -h / 2, -w / 2, h, w);
-  } else cx.drawImage(sh.im, x, y, w, h, px, py, w, h);
+  c = cutFrame(sh.im, f.slice(1));
   c.ppc = sh.ppc;
   SPR.cache.set(name, c);
+  return c;
+}
+// One frame of a sheet as its own canvas: f = [x, y, w, h, rotated, full w, full h, offset x, offset y]
+function cutFrame(im, f) {
+  const [x, y, w, h, rot, sw, sh, ox, oy] = f;
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(sw)); c.height = Math.max(1, Math.round(sh));
+  const cx = c.getContext('2d');
+  const px = (sw - w) / 2 + ox, py = (sh - h) / 2 - oy;
+  if (rot) {              // stored turned a quarter clockwise: turn it back
+    cx.translate(px + w / 2, py + h / 2); cx.rotate(-Math.PI / 2);
+    cx.drawImage(im, x, y, h, w, -h / 2, -w / 2, h, w);
+  } else cx.drawImage(im, x, y, w, h, px, py, w, h);
   return c;
 }
 // Geometry Dash stores big round hazards as one piece to save room:
@@ -985,13 +993,17 @@ function sprTint(name, col) {
   if (c !== undefined) return c;
   const src = sprCanvas(name);
   if (!src) return null;
-  c = document.createElement('canvas'); c.width = src.width; c.height = src.height; c.ppc = src.ppc;
-  const x = c.getContext('2d');
-  x.drawImage(src, 0, 0);
-  x.globalCompositeOperation = 'multiply'; x.fillStyle = `rgb(${r},${g},${b})`; x.fillRect(0, 0, c.width, c.height);
-  x.globalCompositeOperation = 'destination-in'; x.drawImage(src, 0, 0);
+  c = tintCanvas(src, `rgb(${r},${g},${b})`); c.ppc = src.ppc;
   if (TINTS.size > 1500) { let n = 0; for (const k of TINTS.keys()) { TINTS.delete(k); if (++n >= 500) break; } }
   TINTS.set(key, c);
+  return c;
+}
+function tintCanvas(src, css) {
+  const c = document.createElement('canvas'); c.width = src.width; c.height = src.height;
+  const x = c.getContext('2d');
+  x.drawImage(src, 0, 0);
+  x.globalCompositeOperation = 'multiply'; x.fillStyle = css; x.fillRect(0, 0, c.width, c.height);
+  x.globalCompositeOperation = 'destination-in'; x.drawImage(src, 0, 0);
   return c;
 }
 // Draws a sprite centered on (cx, cy). scale 1 = its real Geometry Dash size.
@@ -1476,22 +1488,194 @@ function drawPortalFronts(ctx, list) {
   for (const o of list) if (o.kind === 'portal') drawObject(ctx, o, 'front');
 }
 
+// --- player icons (picked in the icon kit) -------------------------------
+// The cube and ship you pick in the icon kit, colored with Geometry Dash's player
+// colors. The pictures come from Geometry Dash's own icon files, one pair per icon
+// in the icons folder (ship_05-uhd.png + ship_05-uhd.plist, exactly as they are in
+// the game's Resources/icons folder). Icons that aren't there come from
+// GJ_GameSheetIcons.png instead (icons.js says where each one sits on it).
+// Icon 0 is Ship Run's own picture (cube.png / ship.png), which is the default.
+// The icon kit is based on GDBrowser's icon kit by GD Colon (gdbrowser.com).
+const ICON_FOLDER = 'icons/';
+const ICON_FORMS = { cube: { gd: 'player', max: 485 }, ship: { gd: 'ship', max: 169 } };
+const PLAYER_COLORS = [
+  '7dff00', '00ff00', '00ff7d', '00ffff', '007dff', '0000ff', '7d00ff', 'ff00ff', 'ff007d', 'ff0000', 'ff7d00',
+  'ffff00', 'ffffff', 'b900ff', 'ffb900', '000000', '00c8ff', 'afafaf', '5a5a5a', 'ff7d7d', '00af4b', '007d7d',
+  '004baf', '4b00af', '7d007d', 'af004b', 'af4b00', '7d7d00', '4baf00', 'ff4b00', '963200', '966400', '649600',
+  '009664', '006496', '640096', '960064', '960000', '009600', '000096', '7dffaf', '7d7dff', 'fffa7f', 'fa7fff',
+  '00ffc0', '50320e', 'cda576', 'b680ff', 'ff3a3a', '4d4d8f', '000a4c', 'fdd4ce', 'beb5ff', '700000', '520200',
+  '380106', '804f4f', '7a3535', '512424', 'a36246', '754936', '563528', 'ffb972', 'ffa040', '66311e', '5b2700',
+  '472000', 'a77b4d', '6d5339', '513e2a', 'ffffc0', 'fde0a0', 'c0ffa0', 'b1ff6d', 'c0ffe0', '94ffe4', '43a18a',
+  '316d5f', '265449', '006000', '004000', '006060', '004040', 'a0ffff', '010770', '00496d', '00324c', '002638',
+  '5080ad', '335375', '233c56', 'e0e0e0', '3d068c', '370860', '404040', '6f49a4', '54367f', '422a63', 'fcb5ff',
+  'af57af', '824382', '5e315e', '808080', '66033e', '470134', 'd2ff32', '76bdff',
+].map(h => '#' + h);
+// The colors in the order Geometry Dash's garage shows them: four blocks of 4 x 6, then a row of blues and grays
+const KIT_COLOR_ROWS = [[51, 19, 48, 9, 62, 63, 10, 29, 70, 42, 11, 27, 72, 73, 0, 1], [37, 53, 54, 55, 26, 59, 60, 61, 71, 14, 31, 45, 105, 28, 32, 20],
+  [25, 56, 57, 58, 30, 64, 65, 66, 46, 67, 68, 69, 2, 38, 79, 80], [74, 75, 44, 3, 83, 16, 4, 5, 52, 41, 6, 35, 98, 8, 36, 103],
+  [40, 76, 77, 78, 22, 39, 84, 50, 47, 23, 92, 93, 7, 13, 24, 104], [33, 21, 81, 82, 34, 85, 86, 87, 49, 95, 96, 97, 43, 99, 100, 101]];
+const KIT_COLOR_BOTTOM = [106, 88, 89, 90, 12, 91, 17, 102, 18, 94, 15];
+const ICON_SUFFIX = { low: '', medium: '-hd', high: '-uhd' }, ICON_PPB = { '': 30, '-hd': 60, '-uhd': 120 };
+// In ship mode the cube sits in the ship at 0.55 size. Offsets are in squares, from the hitbox middle.
+const KIT_CUBE_SCALE = 0.55, KIT_SHIP_DOWN = 5 / 30, KIT_CUBE_UP = 10 / 30;
+const ICONS = { data: window.GD_ICONS || null, sheet: null, probe: {}, have: {}, src: new Map(), art: new Map() };
+const iconBase = (form, id) => ICON_FORMS[form].gd + '_' + String(id).padStart(2, '0');
+
+// Reads the frames out of a Geometry Dash .plist: { "ship_05_001": [x, y, w, h, rotated, full w, full h, offset x, offset y] }
+function plistFrames(text) {
+  const doc = new DOMParser().parseFromString(text, 'application/xml');
+  const top = doc.querySelector('plist > dict');
+  if (!top) return null;
+  const value = el => el.tagName === 'dict' ? dictOf(el) : el.tagName === 'true' ? true : el.tagName === 'false' ? false : el.textContent;
+  const dictOf = d => { const o = {}, k = [...d.children]; for (let i = 0; i + 1 < k.length; i += 2) o[k[i].textContent] = value(k[i + 1]); return o; };
+  const frames = dictOf(top).frames;
+  if (!isOpts(frames)) return null;
+  const nums = v => (String(v || '').match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
+  const out = {};
+  for (const [name, f] of Object.entries(frames)) {
+    if (!isOpts(f)) continue;
+    const r = nums(f.textureRect || f.frame), size = nums(f.spriteSourceSize || f.sourceSize), off = nums(f.spriteOffset || f.offset);
+    if (r.length < 4) continue;
+    out[name.replace(/\.png$/, '')] = [r[0], r[1], r[2], r[3], f.textureRotated || f.rotated ? 1 : 0, size[0] || r[2], size[1] || r[3], off[0] || 0, off[1] || 0];
+  }
+  return out;
+}
+function loadImage(src) {
+  return new Promise(ok => { const im = new Image(); im.onload = () => ok(im); im.onerror = () => ok(null); im.src = src; });
+}
+// One icon file pair from the icons folder, or null if it isn't there
+async function loadIconFile(name) {
+  try {
+    const res = await fetch(ICON_FOLDER + name + '.plist');
+    if (!res.ok) return null;
+    const frames = plistFrames(await res.text());
+    const im = frames && await loadImage(ICON_FOLDER + name + '.png');
+    return im ? { im, frames } : null;
+  } catch (e) { return null; }
+}
+// Which sizes the icons folder has for a form (checked once, with icon 1), so
+// missing files aren't asked for over and over
+function iconProbe(form) {
+  return ICONS.probe[form] = ICONS.probe[form] || (async () => {
+    const have = [];
+    for (const suf of ['-uhd', '-hd', '']) if (await loadIconFile(iconBase(form, 1) + suf)) have.push(suf);
+    ICONS.have[form] = have;
+    return have;
+  })();
+}
+// The fallback: GJ_GameSheetIcons at the best quality there is, up to the chosen one
+function iconSheet() {
+  return ICONS.sheet = ICONS.sheet || (async () => {
+    const d = ICONS.data;
+    if (!d) return null;
+    for (const q of ['high', 'medium', 'low'].slice(['high', 'medium', 'low'].indexOf(settings.quality))) {
+      if (!d.sheets[q]) continue;
+      const im = await loadImage(IMAGE_FOLDER + encodeURIComponent(d.sheets[q][0]));
+      if (im) return { im, ppb: d.sheets[q][1], frames: d.frames[q] };
+    }
+    return null;
+  })();
+}
+async function loadIconSource(form, id, e) {
+  const base = iconBase(form, id), want = ICON_SUFFIX[settings.quality] || '-hd';
+  const have = await iconProbe(form);
+  if (have.length) {
+    const order = [want, '-uhd', '-hd', ''].filter((x, i, a) => have.includes(x) && a.indexOf(x) === i);
+    for (const suf of order) {
+      const got = await loadIconFile(base + suf);
+      if (got) { Object.assign(e, got, { ppb: ICON_PPB[suf], state: 'ok' }); iconsChanged(); return; }
+    }
+  }
+  const sh = await iconSheet();
+  if (sh && sh.frames[base + '_001']) Object.assign(e, { im: sh.im, ppb: sh.ppb, frames: sh.frames, state: 'ok' });
+  else e.state = 'none';
+  iconsChanged();
+}
+// The pictures for one icon ({ im, ppb, frames }), or null while loading or if it doesn't exist
+function iconSource(form, id) {
+  const key = iconBase(form, id) + '|' + settings.quality;
+  let e = ICONS.src.get(key);
+  if (!e) { e = { state: 'loading' }; ICONS.src.set(key, e); loadIconSource(form, id, e); }
+  return e.state === 'ok' ? e : null;
+}
+const iconMissing = (form, id) => { const e = ICONS.src.get(iconBase(form, id) + '|' + settings.quality); return !!e && e.state === 'none'; };
+// One icon put together in its colors, like Geometry Dash: glow at the back, then
+// color 2, then color 1, then the white parts ("W", white unless you change it). Kept for reuse.
+function iconArt(form, id, look) {
+  const src = iconSource(form, id);
+  if (!src) return null;
+  const base = iconBase(form, id);
+  const key = [base, src.ppb, look.col1, look.col2, look.glow ? look.glowCol : '-', look.colW].join('|');
+  let c = ICONS.art.get(key);
+  if (c) return c;
+  const layer = (part, col) => {
+    const f = src.frames[base + part];
+    if (!f || f[2] * f[3] <= 9) return null;      // missing, or a tiny empty placeholder
+    const cut = cutFrame(src.im, f);
+    const [, , w, h, , , , ox, oy] = f;
+    return { im: col ? tintCanvas(cut, col) : cut, l: ox - w / 2, r: ox + w / 2, t: -oy - h / 2, b: -oy + h / 2 };
+  };
+  const layers = [look.glow && layer('_glow_001', PLAYER_COLORS[look.glowCol]), layer('_2_001', PLAYER_COLORS[look.col2]),
+    layer('_001', PLAYER_COLORS[look.col1]), layer('_extra_001', look.colW === 12 ? null : PLAYER_COLORS[look.colW])].filter(Boolean);
+  if (!layers.length) return null;
+  // Sized to what is actually drawn (some icons have an empty placeholder frame).
+  // (ax, ay) is the icon's middle, which is not always the middle of the picture.
+  const L = Math.floor(Math.min(...layers.map(l => l.l))), T = Math.floor(Math.min(...layers.map(l => l.t)));
+  c = document.createElement('canvas');
+  c.width = Math.ceil(Math.max(...layers.map(l => l.r))) - L; c.height = Math.ceil(Math.max(...layers.map(l => l.b))) - T;
+  c.ax = -L; c.ay = -T;
+  const x = c.getContext('2d');
+  for (const { im } of layers) x.drawImage(im, c.ax - im.width / 2, c.ay - im.height / 2);
+  c.ppb = src.ppb;
+  if (ICONS.art.size > 600) ICONS.art.clear();
+  ICONS.art.set(key, c);
+  return c;
+}
+// What the player looks like: { cube, ship, col1, col2, glow, glowCol }, kept in this browser
+const KIT_KEY = 'shiprun.icons.v1';
+const KIT_DEFAULTS = { cube: 0, ship: 0, col1: 0, col2: 3, glow: false, glowCol: 3, colW: 12 };
+const kit = (() => {
+  const k = { ...KIT_DEFAULTS };
+  try {
+    const d = JSON.parse(localStorage.getItem(KIT_KEY) || '{}');
+    k.cube = intIn(d.cube, 0, ICON_FORMS.cube.max, 0); k.ship = intIn(d.ship, 0, ICON_FORMS.ship.max, 0);
+    for (const c of ['col1', 'col2', 'glowCol', 'colW']) k[c] = intIn(d[c], 0, PLAYER_COLORS.length - 1, KIT_DEFAULTS[c]);
+    k.glow = !!d.glow;
+  } catch (e) { /* storage blocked: defaults */ }
+  return k;
+})();
+function saveKit() { try { localStorage.setItem(KIT_KEY, JSON.stringify(kit)); } catch (e) { /* ignore */ } }
+// The picked cube or ship, or null for Ship Run's own picture (also with My Pictures art, or while it loads)
+function kitArt(form, look = kit) { return look[form] && settings.art === 'gd' ? iconArt(form, look[form], look) : null; }
+let iconsTimer = 0;
+function iconsChanged() {
+  clearTimeout(iconsTimer);
+  iconsTimer = setTimeout(() => { if (screen === 'icons') renderKit(); renderKitTile(); if (screen === 'editor') edRequestDraw(); }, 40);
+}
+function iconsReset() { ICONS.src.clear(); ICONS.art.clear(); ICONS.sheet = null; kitUI.built = ''; iconsChanged(); }   // graphics quality changed
+
 // The ship and the cube, placed exactly like your render()
-function drawPlayer(ctx, worldX, y, theta, s, grav, holding) {
+function drawPlayer(ctx, worldX, y, theta, s, grav, holding, opt = {}) {
   const hbSize = gridSize * s;
   const hbCY = (screenHeight - y) - hbSize / 2;
   const flip = grav === -1;
 
-  // cube (drawn first, the ship goes on top)
-  const dx = 0, dy = -10 * s * grav;
+  // Icons from the icon kit are drawn at Geometry Dash's size, with the cube sitting
+  // in the ship like in Geometry Dash (Ship Run's own pictures are a bit bigger)
+  const look = opt.look || kit, cubeArt = kitArt('cube', look), shipArt = kitArt('ship', look);
+  const shipDown = (shipArt ? KIT_SHIP_DOWN * gridSize : 5) * s * grav;
+  const dx = 0, dy = -(shipArt ? KIT_CUBE_UP * gridSize : 10) * s * grav;
   const rX = dx * Math.cos(theta) - dy * Math.sin(theta);
   const rY = -dx * Math.sin(theta) + dy * Math.cos(theta);
+
+  // cube (drawn first, the ship goes on top)
   ctx.save();
-  ctx.translate(worldX + rX, hbCY + rY + 5 * s * grav);
+  ctx.translate(worldX + rX, hbCY + rY + shipDown);
   ctx.rotate(theta);
   const cubeImg = flip ? (IMG.cubeFlipped || IMG.cube) : IMG.cube;
-  if (flip && !IMG.cubeFlipped) ctx.scale(1, -1);
-  if (cubeImg) ctx.drawImage(cubeImg, -110 * scale * s / 2, -60 * scale * s / 2, 110 * scale * s, 60 * scale * s);
+  if (flip && (cubeArt || !IMG.cubeFlipped)) ctx.scale(1, -1);
+  if (cubeArt) drawCentered(ctx, cubeArt, gridSize / cubeArt.ppb * KIT_CUBE_SCALE * s);
+  else if (cubeImg) ctx.drawImage(cubeImg, -110 * scale * s / 2, -60 * scale * s / 2, 110 * scale * s, 60 * scale * s);
   else {
     const c = 12 * s;
     ctx.fillStyle = COLORS.shipMain; ctx.fillRect(-c / 2, -c / 2, c, c);
@@ -1502,11 +1686,12 @@ function drawPlayer(ctx, worldX, y, theta, s, grav, holding) {
 
   // ship
   ctx.save();
-  ctx.translate(worldX, hbCY + 5 * s * grav);
+  ctx.translate(worldX, hbCY + shipDown);
   ctx.rotate(theta);
   const shipImg = flip ? (IMG.shipFlipped || IMG.ship) : IMG.ship;
-  if (flip && !IMG.shipFlipped) ctx.scale(1, -1);
-  if (shipImg) ctx.drawImage(shipImg, -75 * 0.5 * s / 2, -40 * 0.5 * s / 2, 75 * 0.5 * s, 40 * 0.5 * s);
+  if (flip && (shipArt || !IMG.shipFlipped)) ctx.scale(1, -1);
+  if (shipArt) drawCentered(ctx, shipArt, gridSize / shipArt.ppb * s);
+  else if (shipImg) ctx.drawImage(shipImg, -75 * 0.5 * s / 2, -40 * 0.5 * s / 2, 75 * 0.5 * s, 40 * 0.5 * s);
   else {
     ctx.scale(s, s);
     if (holding) {
@@ -1521,6 +1706,9 @@ function drawPlayer(ctx, worldX, y, theta, s, grav, holding) {
   }
   ctx.restore();
 }
+
+// Draws a picture at (0, 0) by its middle (ax, ay for icons), k = how much bigger
+function drawCentered(ctx, c, k) { ctx.drawImage(c, -(c.ax == null ? c.width / 2 : c.ax) * k, -(c.ay == null ? c.height / 2 : c.ay) * k, c.width * k, c.height * k); }
 
 function strokeShape(ctx, shape, color) {
   ctx.strokeStyle = color;
@@ -4462,7 +4650,8 @@ function showScreen(name) {
   document.querySelectorAll('.screen').forEach(s => { s.hidden = s.id !== 'scr-' + name; });
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
   upInput = false;
-  if (name === 'menu') { renderMenuNote(); $('btnEditor').hidden = !settings.editorMode; }
+  if (name === 'menu') { renderMenuNote(); $('btnEditor').hidden = !settings.editorMode; requestAnimationFrame(renderKitTile); }
+  if (name === 'icons') requestAnimationFrame(openKit);
   if (name === 'play') requestAnimationFrame(fitGameCanvas);
   if (name === 'practice') renderPractice();
   if (name === 'levels') renderLevelList();
@@ -4667,6 +4856,204 @@ function placeToast() {
   if (covered() >= atTop) t.classList.remove('under');
 }
 
+// --- the icon kit: pick your cube, ship and colors ---
+// Looks and works like GDBrowser's Online Icon Kit by GD Colon (gdbrowser.com).
+// Icon 0 is Ship Run's own picture. The list shows every icon in gray and white,
+// like Geometry Dash's garage; the big one at the top is in your colors.
+const kitUI = { tab: 'ship', slot: 'col1', colors: false, built: '', seen: new Set(), observer: null };
+const KIT_GRID_LOOK = { col1: 17, col2: 12, glow: false, glowCol: 0, colW: 12 };
+const KIT_SLOT_NAMES = { col1: 'Col 1', col2: 'Col 2', glowCol: 'Glow', colW: 'White' };
+// How many icons there are: all of Geometry Dash's once the icons folder has them,
+// otherwise the ones on GJ_GameSheetIcons
+function kitCount(form) {
+  if (ICONS.have[form] && ICONS.have[form].length) return ICON_FORMS[form].max;
+  const fr = ICONS.data ? Object.values(ICONS.data.frames)[0] || {} : {};
+  const re = new RegExp('^' + ICON_FORMS[form].gd + '_(\\d+)_001$');
+  let n = 0;
+  for (const k in fr) { const m = re.exec(k); if (m) n = Math.max(n, Number(m[1])); }
+  return Math.min(n, ICON_FORMS[form].max);
+}
+const kitGlowOk = () => ['cube', 'ship'].some(f => ICONS.have[f] && ICONS.have[f].length);   // GJ_GameSheetIcons has no glow pictures
+function sizeCanvasToBox(c) {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2), r = c.getBoundingClientRect();
+  const w = Math.max(1, Math.round(r.width * dpr)), h = Math.max(1, Math.round(r.height * dpr));
+  if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+  const ctx = c.getContext('2d');
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, w, h); ctx.imageSmoothingQuality = 'high';
+  return [w, h];
+}
+// The player (ship with its cube), with the hitbox middle at (cx, cy) and 1 square = b pixels
+function drawKitPlayer(ctx, cx, cy, b, look = kit) {
+  const u = b / gridSize;
+  ctx.save(); ctx.scale(u, u);
+  drawPlayer(ctx, cx / u, screenHeight - cy / u - gridSize / 2, 0, 1, 1, false, { look });
+  ctx.restore();
+}
+// A cube or a ship on its own, middle at (cx, cy), 1 square = b pixels. False if it isn't loaded yet.
+function drawKitIcon(ctx, form, cx, cy, b, look = kit) {
+  ctx.save(); ctx.translate(cx, cy);
+  const art = kitArt(form, look);
+  let ok = true;
+  if (art) drawCentered(ctx, art, b / art.ppb);
+  else if (look[form]) ok = false;
+  else if (form === 'cube' && IMG.cube) drawCentered(ctx, IMG.cube, b * 0.77 / 554);   // cube.png: the cube is 554 pixels wide
+  else if (form === 'ship' && IMG.ship) drawCentered(ctx, IMG.ship, b * 1.875 / IMG.ship.width);
+  ctx.restore();
+  return ok;
+}
+function drawKitTileArt(btn) {
+  const c = btn.querySelector('canvas'), form = kitUI.tab, id = Number(btn.dataset.icon);
+  const [W, H] = sizeCanvasToBox(c);
+  drawKitIcon(c.getContext('2d'), form, W / 2, H / 2, Math.min(H * 0.62, W * (form === 'ship' ? 0.5 : 0.7)), { ...KIT_GRID_LOOK, [form]: id });
+  if (id && iconMissing(form, id)) { btn.hidden = true; kitUI.seen.delete(btn); }
+}
+function renderKitGrid() {
+  const grid = $('kitGrid'), form = kitUI.tab, n = kitCount(form), key = form + n + settings.quality + settings.art;
+  if (kitUI.built !== key) {
+    kitUI.built = key;
+    if (kitUI.observer) kitUI.observer.disconnect();
+    kitUI.seen.clear();
+    const kind = form === 'cube' ? 'Cube' : 'Ship';
+    let html = '';
+    for (let id = 0; id <= n; id++) {
+      html += `<button type="button" class="kit-icon" data-icon="${id}" title="${id ? kind + ' ' + id : 'Ship Run\'s own ' + form}" aria-label="${id ? kind + ' ' + id : 'Ship Run\'s own ' + form}"><canvas></canvas>${id ? '' : '<span class="kit-def o">DEFAULT</span>'}</button>`;
+    }
+    grid.innerHTML = html;
+    grid.scrollTop = 0;
+    // pictures are only loaded for the icons you scroll to
+    kitUI.observer = new IntersectionObserver(list => {
+      for (const en of list) {
+        if (en.isIntersecting) { kitUI.seen.add(en.target); drawKitTileArt(en.target); }
+        else kitUI.seen.delete(en.target);
+      }
+    }, { root: grid, rootMargin: '120px' });
+    grid.querySelectorAll('.kit-icon').forEach(b => kitUI.observer.observe(b));
+  } else for (const b of kitUI.seen) drawKitTileArt(b);
+  grid.querySelectorAll('.kit-icon').forEach(b => b.setAttribute('aria-pressed', Number(b.dataset.icon) === kit[form]));
+}
+function renderKitColors() {
+  const box = $('kitColors');
+  if (!box.children.length) {
+    const sw = i => `<button type="button" class="kit-color" data-col="${i}" style="background:${PLAYER_COLORS[i]}" title="Color ${i} (${PLAYER_COLORS[i]})" aria-label="Color ${i}"></button>`;
+    let html = '';
+    for (let blk = 0; blk < 4; blk++) html += `<div class="kit-block">${KIT_COLOR_ROWS.map(r => r.slice(blk * 4, blk * 4 + 4).map(sw).join('')).join('')}</div>`;
+    box.innerHTML = html + `<div class="kit-bottom">${KIT_COLOR_BOTTOM.map(sw).join('')}</div>`;
+  }
+  const glowOk = kitGlowOk();
+  if (!glowOk && kitUI.slot === 'glowCol') kitUI.slot = 'col1';
+  document.querySelectorAll('[data-kit-slot]').forEach(b => {
+    b.hidden = b.dataset.kitSlot === 'glowCol' && !glowOk;
+    b.style.background = PLAYER_COLORS[kit[b.dataset.kitSlot]];
+    b.setAttribute('aria-pressed', b.dataset.kitSlot === kitUI.slot);
+  });
+  document.querySelector('.kit-glow').hidden = !glowOk;
+  $('kitGlow').checked = kit.glow;
+  box.querySelectorAll('.kit-color').forEach(b => b.setAttribute('aria-pressed', kit[kitUI.slot] === Number(b.dataset.col)));
+}
+function renderKitInfo() {
+  const form = kitUI.tab, id = kit[form], hex = i => PLAYER_COLORS[i];
+  const lines = [`ID: ${id ? (form === 'cube' ? 'Cube ' : 'Ship ') + id : 'Ship Run ' + form}`];
+  if (id) {
+    lines.push(`Col 1: ${kit.col1} (${hex(kit.col1)})`, `Col 2: ${kit.col2} (${hex(kit.col2)})`);
+    if (kit.glow && kitGlowOk()) lines.push(`Glow: ${kit.glowCol} (${hex(kit.glowCol)})`);
+    if (kit.colW !== 12) lines.push(`White: ${kit.colW} (${hex(kit.colW)})`);
+  }
+  $('kitInfo').innerHTML = lines.map(l => `<div>${esc(l)}</div>`).join('');
+}
+function renderKitPreview() {
+  const c = $('kitPreview'), [W, H] = sizeCanvasToBox(c), ctx = c.getContext('2d'), b = H * 0.62;
+  if (kitUI.tab === 'ship') drawKitPlayer(ctx, W / 2, H - b * 0.72, b);
+  else drawKitIcon(ctx, 'cube', W / 2, H - b * 0.5 - 2, b);
+}
+function renderKitForms() {
+  document.querySelectorAll('[data-kit-tab]').forEach(b => {
+    const on = b.dataset.kitTab === kitUI.tab, c = b.querySelector('canvas');
+    b.classList.toggle('cyan', on); b.classList.toggle('gray', !on); b.setAttribute('aria-selected', on);
+    const [W, H] = sizeCanvasToBox(c);
+    drawKitIcon(c.getContext('2d'), b.dataset.kitTab, W / 2, H / 2, W * (b.dataset.kitTab === 'ship' ? 0.62 : 0.72), { ...KIT_GRID_LOOK, cube: 1, ship: 1 });
+  });
+}
+function renderKit() {
+  if (screen !== 'icons') return;
+  $('kitGrid').hidden = kitUI.colors;
+  $('kitColorPanel').hidden = !kitUI.colors;
+  $('kitPaletteBtn').setAttribute('aria-pressed', kitUI.colors);
+  $('kitPaletteBtn').setAttribute('aria-label', kitUI.colors ? 'Show icons' : 'Show colors');
+  renderKitForms();
+  if (kitUI.colors) renderKitColors(); else renderKitGrid();
+  renderKitInfo();
+  renderKitPreview();
+}
+// The ICONS button on the main menu shows your ship
+function renderKitTile() {
+  const c = $('kitTileIcon');
+  if (!c || !c.getClientRects().length) return;
+  const [W, H] = sizeCanvasToBox(c);
+  drawKitPlayer(c.getContext('2d'), W / 2, H * 0.52, W / (kit.ship ? 1.5 : 2));
+}
+function kitChanged() { saveKit(); renderKit(); renderKitTile(); }
+function openKit() {
+  kitUI.built = '';
+  Promise.all([iconProbe('cube'), iconProbe('ship')]).then(() => { kitUI.built = ''; renderKit(); });
+  renderKit();
+}
+function kitRandom() {
+  for (const form of ['cube', 'ship']) {
+    const n = kitCount(form);
+    let id = 1, tries = 0;
+    do id = 1 + Math.floor(Math.random() * n); while (iconMissing(form, id) && ++tries < 20);
+    kit[form] = id;
+  }
+  kit.col1 = Math.floor(Math.random() * PLAYER_COLORS.length);
+  kit.col2 = Math.floor(Math.random() * PLAYER_COLORS.length);
+  kit.glowCol = kit.col2;
+  kitChanged();
+}
+// Saves the icon you're looking at (the ship with its cube, or the cube) as a PNG
+function cropCanvas(c) {
+  const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+  let l = c.width, t = c.height, r = -1, b = -1;
+  for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) {
+    if (d[(y * c.width + x) * 4 + 3]) { if (x < l) l = x; if (x > r) r = x; if (y < t) t = y; if (y > b) b = y; }
+  }
+  if (r < 0) return c;
+  const o = document.createElement('canvas'); o.width = r - l + 1; o.height = b - t + 1;
+  o.getContext('2d').drawImage(c, -l, -t);
+  return o;
+}
+function kitDownload() {
+  const form = kitUI.tab, art = kitArt(form), b = (art && art.ppb) || 120;
+  const c = document.createElement('canvas'), ctx = c.getContext('2d');
+  c.width = b * 4; c.height = b * 4;
+  if (form === 'cube') drawKitIcon(ctx, 'cube', c.width / 2, c.height / 2, b);
+  else drawKitPlayer(ctx, c.width / 2, c.height / 2, b);
+  cropCanvas(c).toBlob(blob => {
+    if (!blob) { toast('Could not make the picture.'); return; }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `shiprun-${form}-${kit[form] || 'default'}.png`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }, 'image/png');
+}
+document.querySelectorAll('[data-kit-tab]').forEach(b => b.addEventListener('click', () => { kitUI.tab = b.dataset.kitTab; kitUI.colors = false; renderKit(); }));
+document.querySelectorAll('[data-kit-slot]').forEach(b => b.addEventListener('click', () => { kitUI.slot = b.dataset.kitSlot; renderKit(); }));
+$('kitPaletteBtn').addEventListener('click', () => { kitUI.colors = !kitUI.colors; renderKit(); });
+$('kitGrid').addEventListener('click', e => { const b = e.target.closest('[data-icon]'); if (b) { kit[kitUI.tab] = Number(b.dataset.icon); kitChanged(); } });
+function kitPickColor(slot, i) {
+  kit[slot] = i;
+  if (slot === 'glowCol') kit.glow = true;      // picking a glow color turns the glow on
+  kitChanged();
+}
+$('kitColors').addEventListener('click', e => { const b = e.target.closest('[data-col]'); if (b) kitPickColor(kitUI.slot, Number(b.dataset.col)); });
+$('kitColors').addEventListener('contextmenu', e => { const b = e.target.closest('[data-col]'); if (b) { e.preventDefault(); kitPickColor('col1', Number(b.dataset.col)); } });
+$('kitGlow').addEventListener('change', e => { kit.glow = e.target.checked; kitChanged(); });
+$('kitRandom').addEventListener('click', kitRandom);
+$('kitReset').addEventListener('click', () => { Object.assign(kit, KIT_DEFAULTS); kitChanged(); });
+$('kitDownload').addEventListener('click', kitDownload);
+$('btnIcons').addEventListener('click', () => showScreen('icons'));
+
+
 // --- the Settings menu ---
 const GAME_SETTINGS = [
   ['editorMode', 'DEV MODE', 'Unlocks the level editor and the hack menu (Tab): noclip, speedhack, hitboxes and more. Until it is on, they are hidden and cannot be used.'],
@@ -4694,6 +5081,7 @@ $('modalBody').addEventListener('click', e => {
   if (!b || modalKind !== 'game') return;
   settings[b.dataset.choice] = b.dataset.v; saveSettings();
   loadSprites();
+  iconsReset();
   $('modalBody').querySelector('.set-list.choices').innerHTML = choicesHTML();
   toast(settings.art === 'gd' ? `Geometry Dash art, ${settings.quality} graphics.` : 'Using your own pictures.');
 });
@@ -4808,6 +5196,8 @@ window.addEventListener('blur', () => { upInput = false; ed.spaceDown = false; }
 window.addEventListener('resize', () => {
   if (screen === 'play') fitGameCanvas();
   else if (screen === 'editor') { edResize(); renderPalette(); }
+  else if (screen === 'icons') renderKit();
+  else if (screen === 'menu') renderKitTile();
   fitTitle();
   fitText();
 });
