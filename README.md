@@ -35,14 +35,17 @@ The ICONS button on the main menu opens an icon kit for picking your cube, ship
 and colors. It is based on [GDBrowser's Online Icon Kit](https://gdbrowser.com/iconkit/)
 by GD Colon. Your choice is saved in your browser.
 
-The icons are cut out of Geometry Dash's own files:
+The icons come from, in this order:
 
-- `GJ_GameSheetIcons.png` + `.plist`: the low-quality sheet that is already in the
-  repo. `icons.js` says where each icon is on it. Remake `icons.js` with
-  `python3 tools/make_icons_js.py` if you replace the sheet, or if you add
-  `GJ_GameSheetIcons-hd` / `-uhd` versions.
-- An `icons/` folder (optional, for every icon in sharp quality, with glow): copy
-  the `player_XX` and `ship_XX` files from Geometry Dash's `Resources/icons` folder,
-  for example `ship_05-uhd.png` + `ship_05-uhd.plist`. The game uses them
-  automatically: `-uhd` for High graphics, `-hd` for Medium and the plain ones for
-  Low. Any icon missing from the folder comes from `GJ_GameSheetIcons` instead.
+- An `icons/` folder (optional): Geometry Dash's own per-icon files from its
+  `Resources/icons` folder, e.g. `ship_05-uhd.png` + `ship_05-uhd.plist`. These are
+  used automatically if present.
+- The SSOH texture pack's cubes and ships, in `icons-ssoh-uhd.png` (High graphics),
+  `icons-ssoh-hd.png` (Medium) and `icons-ssoh.png` (Low). Only the pack's icons
+  were cut out; nothing else from the pack is used.
+- `GJ_GameSheetIcons.png`, Geometry Dash's low-quality icon sheet, for icons the
+  pack doesn't have.
+
+`icons.js` says where every icon is on these sheets. Remake it with
+`python3 tools/make_icons_js.py` (see the top of that file for how to cut the
+SSOH icons again from the pack's sheets).

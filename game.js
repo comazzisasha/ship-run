@@ -1563,17 +1563,21 @@ function iconProbe(form) {
     return have;
   })();
 }
-// The fallback: GJ_GameSheetIcons at the best quality there is, up to the chosen one
-function iconSheet() {
-  return ICONS.sheet = ICONS.sheet || (async () => {
-    const d = ICONS.data;
-    if (!d) return null;
-    for (const q of ['high', 'medium', 'low'].slice(['high', 'medium', 'low'].indexOf(settings.quality))) {
-      if (!d.sheets[q]) continue;
-      const im = await loadImage(IMAGE_FOLDER + encodeURIComponent(d.sheets[q][0]));
-      if (im) return { im, ppb: d.sheets[q][1], frames: d.frames[q] };
-    }
-    return null;
+// The icon sheets from icons.js, in order: the SSOH texture pack's icons, then
+// GJ_GameSheetIcons. Which quality: the chosen one, or the best one below it there is.
+const ICON_SOURCES = (ICONS.data && ICONS.data.sources) || [];
+const QUALITIES = ['high', 'medium', 'low'];
+function iconSheetQuality(src) {
+  const from = Math.max(0, QUALITIES.indexOf(settings.quality));
+  return QUALITIES.slice(from).find(q => src.sheets[q]) || QUALITIES.find(q => src.sheets[q]);
+}
+// Loads one source's sheet (once). Null if it can't be loaded.
+function iconSheet(i) {
+  ICONS.sheet = ICONS.sheet || [];
+  return ICONS.sheet[i] = ICONS.sheet[i] || (async () => {
+    const src = ICON_SOURCES[i], q = iconSheetQuality(src);
+    const im = q && await loadImage(IMAGE_FOLDER + encodeURIComponent(src.sheets[q][0]));
+    return im ? { im, ppb: src.sheets[q][1], frames: src.frames[q] } : null;
   })();
 }
 async function loadIconSource(form, id, e) {
@@ -1583,12 +1587,16 @@ async function loadIconSource(form, id, e) {
     const order = [want, '-uhd', '-hd', ''].filter((x, i, a) => have.includes(x) && a.indexOf(x) === i);
     for (const suf of order) {
       const got = await loadIconFile(base + suf);
-      if (got) { Object.assign(e, got, { ppb: ICON_PPB[suf], state: 'ok' }); iconsChanged(); return; }
+      if (got) { Object.assign(e, got, { ppb: ICON_PPB[suf], from: 'Geometry Dash', state: 'ok' }); iconsChanged(); return; }
     }
   }
-  const sh = await iconSheet();
-  if (sh && sh.frames[base + '_001']) Object.assign(e, { im: sh.im, ppb: sh.ppb, frames: sh.frames, state: 'ok' });
-  else e.state = 'none';
+  for (let i = 0; i < ICON_SOURCES.length; i++) {
+    const src = ICON_SOURCES[i], q = iconSheetQuality(src);
+    if (!q || !src.frames[q][base + '_001']) continue;      // this sheet doesn't have the icon: don't download it
+    const sh = await iconSheet(i);
+    if (sh) { Object.assign(e, { im: sh.im, ppb: sh.ppb, frames: sh.frames, from: src.name, state: 'ok' }); iconsChanged(); return; }
+  }
+  e.state = 'none';
   iconsChanged();
 }
 // The pictures for one icon ({ im, ppb, frames }), or null while loading or if it doesn't exist
@@ -4868,13 +4876,14 @@ const KIT_SLOT_NAMES = { col1: 'Col 1', col2: 'Col 2', glowCol: 'Glow', colW: 'W
 // otherwise the ones on GJ_GameSheetIcons
 function kitCount(form) {
   if (ICONS.have[form] && ICONS.have[form].length) return ICON_FORMS[form].max;
-  const fr = ICONS.data ? Object.values(ICONS.data.frames)[0] || {} : {};
   const re = new RegExp('^' + ICON_FORMS[form].gd + '_(\\d+)_001$');
   let n = 0;
-  for (const k in fr) { const m = re.exec(k); if (m) n = Math.max(n, Number(m[1])); }
+  for (const src of ICON_SOURCES) for (const k in Object.values(src.frames)[0] || {}) { const m = re.exec(k); if (m) n = Math.max(n, Number(m[1])); }
   return Math.min(n, ICON_FORMS[form].max);
 }
-const kitGlowOk = () => ['cube', 'ship'].some(f => ICONS.have[f] && ICONS.have[f].length);   // GJ_GameSheetIcons has no glow pictures
+// Glow needs glow pictures: the SSOH icons and the icons folder have them, GJ_GameSheetIcons doesn't
+const kitGlowOk = () => ['cube', 'ship'].some(f => ICONS.have[f] && ICONS.have[f].length)
+  || ICON_SOURCES.some(src => Object.keys(Object.values(src.frames)[0] || {}).some(k => k.endsWith('_glow_001')));
 function sizeCanvasToBox(c) {
   const dpr = Math.min(window.devicePixelRatio || 1, 2), r = c.getBoundingClientRect();
   const w = Math.max(1, Math.round(r.width * dpr)), h = Math.max(1, Math.round(r.height * dpr));
@@ -4958,6 +4967,8 @@ function renderKitInfo() {
     lines.push(`Col 1: ${kit.col1} (${hex(kit.col1)})`, `Col 2: ${kit.col2} (${hex(kit.col2)})`);
     if (kit.glow && kitGlowOk()) lines.push(`Glow: ${kit.glowCol} (${hex(kit.glowCol)})`);
     if (kit.colW !== 12) lines.push(`White: ${kit.colW} (${hex(kit.colW)})`);
+    const src = iconSource(form, id);
+    if (src && src.from) lines.push(`Art: ${src.from}`);
   }
   $('kitInfo').innerHTML = lines.map(l => `<div>${esc(l)}</div>`).join('');
 }
