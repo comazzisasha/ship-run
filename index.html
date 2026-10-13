@@ -234,6 +234,7 @@ body[data-screen="editor"] .toast { bottom: 250px; }
   font-family: var(--f-gd); font-size: 15px; line-height: 1.35; text-align: center; --ow: 1.5px; pointer-events: none;
 }
 body .toast.over { top: calc(10px + env(safe-area-inset-top, 0px)); bottom: auto; width: max-content; background: rgba(0, 0, 0, .9); }   /* while EDIT GROUP / EDIT OBJECT are open */
+body .toast.over.under { top: auto; bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }     /* placeToast(): the bottom hides fewer of their buttons */
 
 /* ---------- play ---------- */
 #scr-play { background: #00225e; }
@@ -263,7 +264,7 @@ body .toast.over { top: calc(10px + env(safe-area-inset-top, 0px)); bottom: auto
 
 /* ---------- editor (laid out like the Geometry Dash editor) ---------- */
 #scr-editor { display: grid; grid-template-rows: minmax(0, 1fr) auto; grid-template-columns: minmax(0, 1fr); background: #000; }
-.ed-view { position: relative; min-height: 0; overflow: hidden; }
+.ed-view { position: relative; min-height: 0; overflow: hidden; container-type: size; }      /* its height picks the short-canvas layout further down */
 #edCanvas { position: absolute; inset: 0; touch-action: none; cursor: crosshair; }
 #edCanvas[data-mode="edit"] { cursor: default; }
 #edCanvas[data-mode="delete"] { cursor: not-allowed; }
@@ -280,7 +281,7 @@ body .toast.over { top: calc(10px + env(safe-area-inset-top, 0px)); bottom: auto
 .ed-top { top: 16px; left: 50%; transform: translateX(-50%); width: min(500px, 36%); display: grid; gap: 6px; justify-items: center; }
 #edName { font-family: var(--f-gd); font-size: 18px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ed-warn { max-width: 100%; padding: 6px 12px; border-radius: 10px; background: rgba(0,0,0,.6); font: 700 13px/1.35 var(--f-text); color: #ffe14d; text-align: center; cursor: pointer; }
-.ed-tr { top: 14px; right: 16px; display: flex; gap: 14px; align-items: center; }
+.ed-tr { top: 14px; right: 16px; z-index: 3; display: flex; gap: 14px; align-items: center; }      /* over the action buttons, so pause stays reachable on any canvas */
 .ed-tr .round { --r: 60px; position: relative; }
 .ed-tr .round.small { --r: 40px; }
 .ed-tr .round .lbl { font-size: 22px; --ow: 2px; }
@@ -461,6 +462,7 @@ body .toast.over { top: calc(10px + env(safe-area-inset-top, 0px)); bottom: auto
 .ed-props [data-open-egroup] { height: 32px; }       /* as tall as the X / Y boxes, so the panel is no taller than before */
 .ed-props [data-open-egroup] .ch-name { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ed-props .gd-btn.small { align-self: flex-end; }
+.ed-props .sel-layers { display: none; align-self: center; align-items: center; gap: 4px; }      /* shown only on a short phone (below) */
 .chp-note { text-align: center; font: 15px/1.4 var(--f-text); text-shadow: 0 1px 0 rgba(0,0,0,.45); }
 .chp-named, .ch-row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; align-items: center; }
 .chp-pager { display: flex; align-items: center; gap: 8px; justify-content: center; }
@@ -611,7 +613,8 @@ body .toast.over { top: calc(10px + env(safe-area-inset-top, 0px)); bottom: auto
   .eg-side { order: -1; width: auto; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
   .eg-side-btn { padding: 8px 2px; }
   .eg-side-btn .gold { font-size: 11px; }
-  .eg-top { padding: 0 34px 0 0; gap: 8px 14px; }
+  .eg-info { top: 10px; right: 10px; width: 36px; height: 36px; font-size: 20px; }
+  .eg-top { padding: 0 46px 0 0; gap: 8px 12px; }      /* clear of the [i] button by 12px */
   .eg-panel .gold { font-size: 17px; }
   .eg-num { width: 62px; height: 42px; line-height: 42px; font-size: 18px; }
   .eg-arrow { width: 26px; height: 38px; }
@@ -743,6 +746,21 @@ body .toast.over { top: calc(10px + env(safe-area-inset-top, 0px)); bottom: auto
 @media (max-width: 1000px) and (max-height: 900px) {     /* a short canvas: the panel reaches up to TEST / FROM HERE, so it starts right of them */
   .ed-props { left: 112px; max-width: calc(100% - 112px - 16px - 12px - var(--act-w)); }
 }
+/* a canvas too short for those layouts (a short window or a landscape tablet): the action buttons go into two rows of six at the
+   bottom right, so they neither reach up to the zoom / settings / pause buttons nor run off the bottom, and the info panel becomes
+   one row left of them that scrolls sideways */
+@container ((min-width: 701px) and (max-height: 289px)) or ((min-width: 1001px) and (max-height: 372px)) {
+  .ed-actions { grid-template-columns: repeat(6, 64px); top: auto; bottom: 40px; }
+  .act-btn { height: 50px; font-size: 10.5px; }
+  .layer-row { grid-column: 4 / -1; height: auto; justify-content: center; }
+  .layer-arrow { width: 26px; height: 34px; }
+  .layer-num { min-width: 56px; height: 34px; font-size: 18px; }
+  .ed-props {
+    --act-w: calc(6 * 64px + 5 * 9px); left: 112px; transform: none; max-width: calc(100% - 112px - 16px - 12px - var(--act-w));
+    flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin;
+  }
+  .ed-props > * { flex: none; }
+}
 @media (max-width: 700px) {
   .palette-items { grid-template-columns: repeat(var(--cols, 5), 50px); grid-auto-rows: 50px; gap: 5px; }
   .pal-item { width: 50px; height: 50px; }
@@ -772,10 +790,14 @@ body .toast.over { top: calc(10px + env(safe-area-inset-top, 0px)); bottom: auto
   .ed-props > * { flex: none; order: 2; }
   /* the buttons that open EDIT OBJECT, GO TO LAYER, EDIT GROUP (and a trigger's window) come first, then X, Y and the rest */
   .ed-props .sel-name { order: 0; }
-  .ed-props .ch-field, .ed-props .sel-layer, .ed-props [data-edit-trigger] { order: 1; }
+  .ed-props .ch-field, .ed-props .sel-layer, .ed-props .sel-layers, .ed-props [data-edit-trigger] { order: 1; }
 }
-@media (max-width: 700px) and (max-height: 839px) {      /* too short for both: the panel goes along the bottom, over the buttons while something is selected */
-  .ed-props { bottom: 8px; }
+@media (max-width: 700px) {
+  @container (max-height: 289px) {      /* too short for both: the panel goes along the bottom, over the buttons while something is
+                                          selected, so it gets its own copy of the layer row */
+    .ed-props { bottom: 8px; }
+    .ed-props .sel-layers { display: flex; }
+  }
 }
 @media (max-width: 560px) {
   .tile { --t: clamp(120px, 40vw, 170px); }

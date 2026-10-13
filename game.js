@@ -432,10 +432,10 @@ function makeObject(def, colOffset = 0, idx = 0) {
       o.parts = P[2].map(([u0, v0, u1, v1]) => {
         if (o.flip) [u0, u1] = [1 - u1, 1 - u0];
         const pts = [[u0, v0], [u1, v1]].map(([u, v]) => turn ? rotatePoint([o.x + u * g, o.y - v * g], c, turn) : [o.x + u * g, o.y - v * g]);
-        const box = { l: Math.min(pts[0][0], pts[1][0]), r: Math.max(pts[0][0], pts[1][0]), t: Math.min(pts[0][1], pts[1][1]), b: Math.max(pts[0][1], pts[1][1]) };
-        const short = LINE_T * g - (box.r - box.l);
+        const line = { l: Math.min(pts[0][0], pts[1][0]), r: Math.max(pts[0][0], pts[1][0]), t: Math.min(pts[0][1], pts[1][1]), b: Math.max(pts[0][1], pts[1][1]) };
+        const box = { ...line }, short = LINE_T * g - (box.r - box.l);
         if (short > 0) { box.l -= short / 2; box.r += short / 2; }
-        return { box, poly: boxPoly(box.l, box.t, box.r, box.b) };
+        return { box, line, poly: boxPoly(box.l, box.t, box.r, box.b) };     // line = the drawn line, box = its hitbox
       });
       o.box = o.parts[0].box; o.hit = { poly: o.parts[0].poly };
     }
@@ -1241,7 +1241,10 @@ function drawObjectArt(ctx, o, pass, cols) {
       if (drawSprInCell(ctx, P[0], o, 0.5, P[1], { flipX: o.flip, color: main, alpha: a })) break;
       ctx.save(); ctx.globalAlpha *= a; ctx.fillStyle = ctx.strokeStyle = cssOf(main);
       if (o.piece === 1) { ctx.lineWidth = 1.2; ctx.strokeRect(o.x + 0.6, o.y - g + 0.6, g - 1.2, g - 1.2); }
-      else for (const part of o.parts) { const b = part.box; ctx.fillRect(b.l, b.t, Math.max(1, b.r - b.l), Math.max(1, b.b - b.t)); }
+      else for (const { line: b } of o.parts) {       // each line as thick as piece 1's outline, kept inside the square
+        const w = Math.max(1.2, b.r - b.l), h = Math.max(1.2, b.b - b.t);
+        ctx.fillRect(Math.min(b.l, o.x + g - w), Math.min(b.t, o.y - h), w, h);
+      }
       ctx.restore();
       break;
     }
@@ -2833,6 +2836,13 @@ function renderProps() {
   const shared = f => { const v = f(list[0]); return list.every(d => f(d) === v) ? v : null; };
   const lay = shared(d => { const o = ed.byDef.get(d); return o.edL + (o.edL2 > 0 && o.edL2 !== o.edL ? ', ' + o.edL2 : ''); });
   html += `<button type="button" class="field sel-layer" data-golayer title="GO TO LAYER: show only this editor layer"><span class="field-label">LAYER</span><span class="sel-val o">${lay === null ? 'MIXED' : lay}</span></button>`;
+  // a copy of the layer row under GO TO LAYER, shown only on a short phone, where this panel covers that row
+  const ln = $('edLayerNum');
+  html += `<div class="sel-layers" role="group" aria-label="Editor layer">
+    <button class="layer-arrow all" type="button" data-layer="all" title="Show all layers" aria-label="Show all layers"><svg aria-hidden="true"><use href="#i-page"/></svg></button>
+    <button class="layer-arrow" type="button" data-layer="-1" title="Previous layer" aria-label="Previous layer"><svg aria-hidden="true"><use href="#i-page-pink"/></svg></button>
+    <button class="layer-num o${ln.classList.contains('locked') ? ' locked' : ''}" type="button" data-layer="lock" title="${esc(ln.title)}">${ln.textContent}</button>
+    <button class="layer-arrow right" type="button" data-layer="1" title="Next layer" aria-label="Next layer"><svg aria-hidden="true"><use href="#i-page-pink"/></svg></button></div>`;
   const gs = shared(d => ed.byDef.get(d).groups.join(', '));
   html += `<div class="field ch-field"><span class="field-label">GROUPS</span><button class="ch-chip" type="button" data-open-egroup title="Edit Group: group IDs, editor layers, Z layer"><span class="ch-name">${gs === null ? 'MIXED' : gs || 'NONE'}</span></button></div>`;
   ed.renderingProps = true;          // replacing a focused box fires its change event again: ignore that one
@@ -2876,6 +2886,8 @@ $('edSel').addEventListener('click', e => {
   if (chip) { openEditObject(chip.dataset.chip); return; }
   if (e.target.closest('[data-open-egroup]')) { openEditGroup(); return; }
   if (e.target.closest('[data-golayer]')) { edGoToLayer(); return; }
+  const l = e.target.closest('[data-layer]');
+  if (l) { edLayerButton(l.dataset.layer); return; }
   if (e.target.closest('[data-edit-trigger]')) openTriggerEditor(selectedList()[0]);
 });
 
@@ -3358,7 +3370,6 @@ function openEditObject(kind = 'main') {
   eo.hsv = false;
   eoShowPage();
   $('eoPop').hidden = false;
-  $('toast').classList.add('over');     // a message still showing moves to the top, off the window
   eoRender();
 }
 function eoShowPage() { const id = eoCurrent(); eo.page = id >= 1 && id <= 999 ? Math.floor((id - 1) / EO_PER) : 0; }
@@ -3370,6 +3381,7 @@ function eoRender() {
   pop.innerHTML = eoHTML(list);
   pop.querySelectorAll('[data-some]').forEach(c => { c.indeterminate = true; });
   fitText(pop);
+  placeToast();
 }
 function closeEditObject() {
   const pop = $('eoPop');
@@ -3797,7 +3809,6 @@ function openEditGroup() {
   if (!ed.sel.size) return toast('Select something first: click an object in Edit mode.');
   eg.tab = 'main';
   $('egPop').hidden = false;
-  $('toast').classList.add('over');     // a message still showing moves to the top, off the window
   egRender();
 }
 function egRender() {
@@ -3807,6 +3818,7 @@ function egRender() {
   pop.innerHTML = egHTML(list);
   pop.querySelectorAll('[data-some]').forEach(c => { c.indeterminate = true; });
   fitText(pop);
+  placeToast();
 }
 function closeEditGroup() {
   const pop = $('egPop');
@@ -4090,13 +4102,15 @@ function edAction(act) {
 $('edActions').addEventListener('click', e => {
   const b = e.target.closest('[data-act]');
   if (b) { edAction(b.dataset.act); return; }
-  // the editor layer row: blue arrow = ALL, pink arrows = layer down / up, the number = lock
-  const l = e.target.closest('[data-layer]'); if (!l) return;
-  const a = l.dataset.layer;
+  const l = e.target.closest('[data-layer]');
+  if (l) edLayerButton(l.dataset.layer);
+});
+// the editor layer row: blue arrow = ALL, pink arrows = layer down / up, the number = lock
+function edLayerButton(a) {
   if (a === 'all') edSetLayer(-1);
   else if (a === 'lock') edToggleLock();
   else edLayerStep(Number(a));
-});
+}
 $('edToggles').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   if (b.dataset.act) { edAction(b.dataset.act); return; }
@@ -4355,8 +4369,26 @@ function armConfirm(btn, label, fn) {
 let toastTimer = 0;
 function toast(msg) {
   const t = $('toast'); t.textContent = msg; t.hidden = false;
-  t.classList.toggle('over', !$('egPop').hidden || !$('eoPop').hidden);     // at the top, off the EDIT windows
+  placeToast();
   clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 3400);
+}
+// While EDIT GROUP or EDIT OBJECT is open, a message goes to the top of the screen, off the window, or
+// to the bottom when that hides fewer of its buttons (on a phone the window fills the screen)
+function placeToast() {
+  const t = $('toast'), pop = [$('egPop'), $('eoPop')].find(p => !p.hidden);
+  t.classList.toggle('over', !!pop); t.classList.remove('under');
+  if (!pop || t.hidden) return;
+  const covered = () => {
+    const r = t.getBoundingClientRect();
+    return [...pop.querySelectorAll('button, input')].filter(b => {
+      const q = b.getBoundingClientRect();
+      return q.width && q.left < r.right && q.right > r.left && q.top < r.bottom && q.bottom > r.top;
+    }).length;
+  };
+  const atTop = covered();
+  if (!atTop) return;
+  t.classList.add('under');
+  if (covered() >= atTop) t.classList.remove('under');
 }
 
 // --- the Settings menu ---
