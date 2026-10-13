@@ -2303,17 +2303,18 @@ function edToggleLock() {
   edPruneSel(); edRequestDraw(); edRenderUI();
   toast(L.has(n) ? `Layer ${n} locked: its objects cannot be selected or deleted.` : `Layer ${n} unlocked.`);
 }
-// GO TO LAYER: jump to the layer of the (first) selected object, keeping the selection
+// GO TO LAYER: jump to the layer of the (first) selected object. It stays
+// selected, and so do the others on that layer; the rest drop out, like any layer switch.
 function edGoToLayer() {
   const first = ed.sel.values().next().value;
   if (!first) return toast('Select an object first. GO TO LAYER takes you to its editor layer.');
-  ed.edLayer = ed.byDef.get(first).edL;
-  edRequestDraw(); edRenderUI();
+  edSetLayer(ed.byDef.get(first).edL);
 }
-// The lowest editor layer that no object is on yet (the + buttons in EDIT GROUP)
-function freeEditorLayer() {
-  for (let n = 0; n <= EDITOR_LAYER_MAX; n++) if (!ed.built.some(o => onLayer(o, n))) return n;
-  return 0;
+// The lowest editor layer that no object is on yet, from `from` up (the + buttons in EDIT GROUP;
+// EDITOR L2 starts at 1, since 0 there means no second layer)
+function freeEditorLayer(from = 0) {
+  for (let n = from; n <= EDITOR_LAYER_MAX; n++) if (!ed.built.some(o => onLayer(o, n))) return n;
+  return from;
 }
 
 // --- selection actions ---
@@ -2827,7 +2828,7 @@ function renderProps() {
   // editor layer(s), and the group IDs (the button opens EDIT GROUP)
   const shared = f => { const v = f(list[0]); return list.every(d => f(d) === v) ? v : null; };
   const lay = shared(d => { const o = ed.byDef.get(d); return o.edL + (o.edL2 > 0 && o.edL2 !== o.edL ? ', ' + o.edL2 : ''); });
-  html += `<div class="field sel-layer"><span class="field-label">LAYER</span><span class="sel-val o">${lay === null ? 'MIXED' : lay}</span></div>`;
+  html += `<button type="button" class="field sel-layer" data-golayer title="GO TO LAYER: show only this editor layer"><span class="field-label">LAYER</span><span class="sel-val o">${lay === null ? 'MIXED' : lay}</span></button>`;
   const gs = shared(d => ed.byDef.get(d).groups.join(', '));
   html += `<div class="field ch-field"><span class="field-label">GROUPS</span><button class="ch-chip" type="button" data-open-egroup title="Edit Group: group IDs, editor layers, Z layer"><span class="ch-name">${gs === null ? 'MIXED' : gs || 'NONE'}</span></button></div>`;
   ed.renderingProps = true;          // replacing a focused box fires its change event again: ignore that one
@@ -2870,6 +2871,7 @@ $('edSel').addEventListener('click', e => {
   const chip = e.target.closest('[data-chip]');
   if (chip) { openEditObject(chip.dataset.chip); return; }
   if (e.target.closest('[data-open-egroup]')) { openEditGroup(); return; }
+  if (e.target.closest('[data-golayer]')) { edGoToLayer(); return; }
   if (e.target.closest('[data-edit-trigger]')) openTriggerEditor(selectedList()[0]);
 });
 
@@ -2884,6 +2886,8 @@ function usedChannels() {        // channels this level already uses
     for (const k of ['color', 'detail', 'copy']) if (op[k] != null) used.add(chId(op[k]));
     if (d[0] === 'ColorTrigger') used.add(chId(op.channel == null ? 1 : op.channel));
   }
+  // and the colors objects have without being given one (like channel 1 on deco details)
+  for (const o of ed.built) { if (o.ch) used.add(o.ch); if (o.dch) used.add(o.dch); }
   if (ed.level.objects.some(d => d[0] === 'ColorTrigger' && (optsOf(d) || {}).channel == null)) used.add(1);
   used.delete(0);
   return used;
@@ -3026,7 +3030,7 @@ function cpWrite() {
     if (s.blend) op.blending = true;
     if (cp.touch) op.touch = true;
     if (cp.spawn) op.spawn = true;
-    if (old.groups) op.groups = old.groups;
+    for (const k of EG_KEEP) if (old[k] != null) op[k] = old[k];     // its EDIT GROUP settings stay
     if (optsOf(d)) d.pop();
     d.push(op);
   } else {
@@ -3208,13 +3212,14 @@ $('colorPop').addEventListener('click', e => {
 // --- the alpha trigger window: group, fade time, opacity ---
 const ap = { def: null, snap: '' };
 // The lowest group ID the level does not use yet (in objects' groups or as an
-// alpha trigger's target), counting up from `from`
-function nextFreeGroup(from = 1) {
+// alpha trigger's target), counting up from `from`. `skip` is the alpha trigger
+// being edited: its own target does not count, so NEXT FREE there keeps giving the same ID.
+function nextFreeGroup(from = 1, skip = null) {
   const used = new Set();
   for (const d of ed.level.objects) {
     const op = optsOf(d) || {};
     for (const g of op.groups || []) used.add(Number(g));
-    if (d[0] === 'AlphaTrigger' && op.group) used.add(Number(op.group));
+    if (d[0] === 'AlphaTrigger' && op.group && d !== skip) used.add(Number(op.group));
   }
   for (let i = Math.max(1, from); i < 10000; i++) if (!used.has(i)) return i;
   return 1;
@@ -3256,7 +3261,7 @@ function alWrite(fromRange) {
   if (fade !== 0.5) op.fade = round3(fade);
   if ($('alTouch').checked) op.touch = true;
   if ($('alSpawn').checked) op.spawn = true;
-  if (old.groups) op.groups = old.groups;
+  for (const k of EG_KEEP) if (old[k] != null) op[k] = old[k];       // its EDIT GROUP settings stay
   if (optsOf(d)) d.pop();
   d.push(op);
   edRebuild(); edRequestDraw();
@@ -3287,7 +3292,7 @@ $('modalBody').addEventListener('click', e => {
   if (modalKind !== 'alpha') return;
   const b = e.target.closest('button'); if (!b) return;
   if (b.dataset.alg) $('alGroup').value = Math.max(0, (Number($('alGroup').value) || 0) + Number(b.dataset.alg));
-  else if (b.id === 'alFree') $('alGroup').value = nextFreeGroup();
+  else if (b.id === 'alFree') $('alGroup').value = nextFreeGroup(1, ap.def);
   else return;
   alWrite(false);
   alNote();
@@ -3337,6 +3342,9 @@ const eoList = () => selectedList().filter(eo.kind === 'detail' ? hasDetail : is
 const eoChOf = d => { const o = ed.byDef.get(d); return eo.kind === 'detail' ? o.dch : o.ch; };
 function eoCurrent(list = eoList()) { const id = list.length ? eoChOf(list[0]) : 0; return list.every(d => eoChOf(d) === id) ? id : 0; }   // 0 = mixed
 
+// The [i] buttons of EDIT GROUP and EDIT OBJECT: an INFO popup over the window, like Geometry Dash's
+function showInfo(text) { showModal('INFO', `<p>${esc(text)}</p>`, [{ label: 'OK', primary: true, fn: hideModal }]); }
+
 function openEditObject(kind = 'main') {
   const list = selectedList();
   if (!list.length) return toast('Select something first: click an object in Edit mode.');
@@ -3346,6 +3354,7 @@ function openEditObject(kind = 'main') {
   eo.hsv = false;
   eoShowPage();
   $('eoPop').hidden = false;
+  $('toast').classList.add('over');     // a message still showing moves to the top, off the window
   eoRender();
 }
 function eoShowPage() { const id = eoCurrent(); eo.page = id >= 1 && id <= 999 ? Math.floor((id - 1) / EO_PER) : 0; }
@@ -3417,11 +3426,25 @@ function eoLive(k, val) {
   if (!eo.live) { beginChange(); eo.live = true; }
   eoSetHsv(k, val);
   edRebuild(); edRequestDraw();
-  const list = eoList(), x = hsvOf(list[0]);
-  const box = $('eoPop').querySelector(`[data-eohsvnum="${k}"]`);
-  if (box) { box.value = k === 'h' ? String(x.h) : x[k].toFixed(2); box.placeholder = ''; }
-  const after = $('eoPop').querySelector('.eo-after');
+  eoHsvShow();
+}
+// Shows the objects' HSV in the open HSV window without building it again. Rebuilding
+// would swap out the button under the pointer, so a click on OK or RESET right after
+// typing in a box (which fires the box's "change" first) would be lost.
+function eoHsvShow() {
+  const pop = $('eoPop'), list = eoList();
+  if (!list.length) return;
+  const xs = list.map(d => hsvOf(d));
+  for (const k of ['h', 's', 'v']) {
+    const v = xs.every(x => x[k] === xs[0][k]) ? xs[0][k] : null;
+    const box = pop.querySelector(`[data-eohsvnum="${k}"]`), range = pop.querySelector(`[data-eohsv="${k}"]`);
+    if (box) { box.value = v === null ? '' : k === 'h' ? String(v) : v.toFixed(2); box.placeholder = v === null ? 'MIXED' : ''; }
+    if (range && v !== null) range.value = String(v);
+  }
+  const after = pop.querySelector('.eo-after');
   if (after) after.style.background = cssOf(eoPreview(list[0]).after);
+  const btn = pop.querySelector('.eo-hsv-btn');
+  if (btn) btn.classList.toggle('on', list.some(d => parseHsv(optOf(d, eoHsvKey()))));
 }
 function eoLiveEnd() {
   if (!eo.live) return;
@@ -3543,7 +3566,7 @@ $('eoPop').addEventListener('click', e => {
   else if (d.eo === 'hsvok') { eo.hsv = false; eoRender(); }
   else if (d.eo === 'hsvreset') { const key = eoHsvKey(); egChange(() => { for (const x of eoList()) setOpt(x, key, null); }); eoRender(); }
   else if (d.eo === 'ok') closeEditObject();
-  else if (d.eo === 'info') toast(`Click a channel to give it to the ${eo.kind === 'detail' ? 'detail color' : 'color'} of the selected objects. D puts each back to its own. `
+  else if (d.eo === 'info') showInfo(`Click a channel to give it to the ${eo.kind === 'detail' ? 'detail color' : 'color'} of the selected objects. D puts each back to its own. `
     + 'Color triggers change a channel, and every object on it changes too. The square at the bottom right edits the channel; HSV changes just these objects.');
 });
 $('eoPop').addEventListener('input', e => {
@@ -3553,12 +3576,12 @@ $('eoPop').addEventListener('input', e => {
 });
 $('eoPop').addEventListener('change', e => {
   const t = e.target, d = t.dataset;
-  if (d.eohsv) { eoLiveEnd(); eoRender(); return; }
+  if (d.eohsv) { eoLiveEnd(); eoHsvShow(); return; }
   if (d.eoadd) { egChange(() => eoSetAdd(d.eoadd, t.checked)); eoRender(); return; }
   if (!d.eohsvnum) return;
   const v = Number(t.value);
   if (t.value.trim() !== '' && Number.isFinite(v)) egChange(() => eoSetHsv(d.eohsvnum, d.eohsvnum === 'h' ? Math.round(v) : v));
-  eoRender();
+  eoHsvShow();
 });
 
 // --- the EDIT GROUP window (laid out like Geometry Dash's) ---
@@ -3608,6 +3631,8 @@ for (const k of ['ord', 'gch', 'enterCh', 'material', 'controlId']) {
 // What COPY / PASTE carry over (EDITOR L is copied as a number, since its default depends on the object)
 const EG_COPY = ['editorL2', 'zOrder', 'zLayer', 'groups', 'parent', 'ord', 'gch', 'enterCh', 'material', 'controlId', ...FLAG_KEYS];
 const GAMEPLAY_ONLY = new Set(['ord', 'gch', 'controlId']);
+// What a trigger's own window keeps when it writes the trigger again
+const EG_KEEP = ['editorL', ...EG_COPY];
 
 function egShared(list, f) { const v = f(list[0]); return list.every(d => f(d) === v) ? v : null; }    // null = they differ
 // One undo step, and only when something really changed
@@ -3768,6 +3793,7 @@ function openEditGroup() {
   if (!ed.sel.size) return toast('Select something first: click an object in Edit mode.');
   eg.tab = 'main';
   $('egPop').hidden = false;
+  $('toast').classList.add('over');     // a message still showing moves to the top, off the window
   egRender();
 }
 function egRender() {
@@ -3790,7 +3816,7 @@ $('egPop').addEventListener('click', e => {
   const d = b.dataset;
   if (d.egstep === 'id') eg.id = Math.max(0, Math.min(9999, eg.id + Number(d.dir)));
   else if (d.egstep) egSetNum(d.egstep, Number(d.dir), true);
-  else if (d.egplus) egSetNum(d.egplus, d.egplus === 'enterCh' ? freeEnterChannel() : freeEditorLayer());
+  else if (d.egplus) egSetNum(d.egplus, d.egplus === 'enterCh' ? freeEnterChannel() : freeEditorLayer(d.egplus === 'L2' ? 1 : 0));
   else if (d.eggroup) egRemoveGroup(Number(d.eggroup));
   else if (d.egzstep) egStepZ(Number(d.egzstep));
   else if (d.egz != null) egSetZ(d.egz);
@@ -3800,7 +3826,7 @@ $('egPop').addEventListener('click', e => {
   else if (d.eg === 'copy') egCopy();
   else if (d.eg === 'paste') egPaste();
   else if (d.eg === 'extra' || d.eg === 'extra2') eg.tab = eg.tab === d.eg ? 'main' : d.eg;
-  else if (d.eg === 'info') { toast(EG_INFO[eg.tab]); return; }
+  else if (d.eg === 'info') { showInfo(EG_INFO[eg.tab]); return; }
   else if (d.eg === 'ok') { if (eg.tab === 'main') { closeEditGroup(); return; } eg.tab = 'main'; }
   else return;
   egRender();
@@ -4325,6 +4351,7 @@ function armConfirm(btn, label, fn) {
 let toastTimer = 0;
 function toast(msg) {
   const t = $('toast'); t.textContent = msg; t.hidden = false;
+  t.classList.toggle('over', !$('egPop').hidden || !$('eoPop').hidden);     // at the top, off the EDIT windows
   clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 3400);
 }
 

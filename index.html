@@ -231,8 +231,9 @@ body[data-screen="editor"] .toast { bottom: 250px; }
 .toast {
   position: fixed; z-index: 40; left: 50%; bottom: calc(22px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
   max-width: calc(100% - 32px); padding: 12px 20px; border-radius: 14px; background: rgba(0, 0, 0, .75);
-  font-family: var(--f-gd); font-size: 15px; line-height: 1.35; text-align: center; --ow: 1.5px;
+  font-family: var(--f-gd); font-size: 15px; line-height: 1.35; text-align: center; --ow: 1.5px; pointer-events: none;
 }
+body .toast.over { top: calc(10px + env(safe-area-inset-top, 0px)); bottom: auto; width: max-content; background: rgba(0, 0, 0, .9); }   /* while EDIT GROUP / EDIT OBJECT are open */
 
 /* ---------- play ---------- */
 #scr-play { background: #00225e; }
@@ -291,7 +292,7 @@ body[data-screen="editor"] .toast { bottom: 250px; }
 .ed-left .round svg { width: calc(var(--r) * .6); height: calc(var(--r) * .6); }
 .ed-left .round-cap { font-size: 11px; margin-top: -8px; }
 
-.ed-actions { right: 16px; top: 92px; display: grid; grid-template-columns: repeat(3, 76px); gap: 9px; z-index: 3; }   /* above the info panel on small screens */
+.ed-actions { right: 16px; top: 92px; display: grid; grid-template-columns: repeat(3, 76px); gap: 9px; }
 .act-btn {
   height: 60px; padding: 3px 4px; cursor: pointer; display: grid; place-items: center;
   font-family: var(--f-gd); font-size: 12.5px; line-height: 1.08; --ow: 1.5px;
@@ -322,7 +323,9 @@ body[data-screen="editor"] .toast { bottom: 250px; }
 .layer-num:hover { filter: brightness(1.15); }
 
 .ed-coords { right: 16px; bottom: 12px; font-family: var(--f-gd); font-size: 13px; --ow: 1.5px; pointer-events: none; }
-.ed-props { left: 50%; bottom: 14px; transform: translateX(-50%); display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 12px; padding: 10px 14px 12px; max-width: min(640px, 56%); }
+/* the selection info panel: as wide as its fields (one row for most objects), wrapping when it runs out of
+   room, and never wide enough to reach under the action buttons (548px = both sides of them) */
+.ed-props { left: 50%; bottom: 14px; transform: translateX(-50%); display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 12px; padding: 10px 14px 12px; width: max-content; max-width: min(840px, max(50%, calc(100% - 548px))); }
 .ed-props .sel-name { font-family: var(--f-gd); font-size: 15px; align-self: center; }
 .ed-props .field { width: 84px; }
 .ed-props .field.wide { width: 140px; }
@@ -452,8 +455,10 @@ body[data-screen="editor"] .toast { bottom: 250px; }
 .ch-chip:hover { filter: brightness(1.15); }
 .ch-name { font-family: var(--f-gd); font-size: 13px; color: #fff; text-shadow: 1.4px 0 0 #000, -1.4px 0 0 #000, 0 1.4px 0 #000, 0 -1.4px 0 #000; }
 .ed-props .field.ch-field { width: auto; }
-.ed-props .field.sel-layer { width: auto; min-width: 50px; }
-.sel-val { display: flex; align-items: center; height: 40px; font-family: var(--f-gd); font-size: 15px; --ow: 1.6px; white-space: nowrap; }
+.ed-props .field.sel-layer { width: auto; min-width: 50px; padding: 0; border: 0; background: none; text-align: left; cursor: pointer; }     /* click = GO TO LAYER */
+.ed-props .field.sel-layer:hover .sel-val { filter: brightness(1.2); color: #ffe14d; }
+.sel-val { display: flex; align-items: center; height: 32px; font-family: var(--f-gd); font-size: 15px; --ow: 1.6px; white-space: nowrap; }
+.ed-props [data-open-egroup] { height: 32px; }       /* as tall as the X / Y boxes, so the panel is no taller than before */
 .ed-props [data-open-egroup] .ch-name { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ed-props .gd-btn.small { align-self: flex-end; }
 .chp-note { text-align: center; font: 15px/1.4 var(--f-text); text-shadow: 0 1px 0 rgba(0,0,0,.45); }
@@ -536,9 +541,10 @@ body[data-screen="editor"] .toast { bottom: 250px; }
 .al-range { flex: 1; min-width: 160px; width: auto; }
 .al-note { font-family: var(--f-gd); font-size: 12px; color: var(--cream); }
 /* the EDIT GROUP window: brown panel, gold titles, cyan / pink / green arrows, buttons down the right */
-.eg-modal { z-index: 32; }
-.eg-wrap { display: flex; align-items: flex-start; gap: 14px; max-width: 100%; max-height: calc(100vh - 32px); }
-.eg-panel { width: min(800px, calc(100vw - 172px)); max-height: calc(100vh - 32px); overflow: auto; gap: 12px; padding: 20px 24px 18px; justify-items: center; }
+.eg-modal { z-index: 29; --top: max(16px, calc(50vh - 270px)); align-items: start; padding-top: var(--top); }   /* under #modal, so the [i] INFO popup shows over it */
+/* a fixed top (not centred), so the buttons on the right stay put when EXTRA / EXTRA2 change the height */
+.eg-wrap { display: flex; align-items: flex-start; gap: 14px; max-width: 100%; max-height: calc(100vh - 16px - var(--top)); }
+.eg-panel { width: min(800px, calc(100vw - 172px)); max-height: calc(100vh - 16px - var(--top)); overflow: auto; gap: 12px; padding: 20px 24px 18px; justify-items: center; }
 .eg-panel .gold { font-size: 22px; }
 .eg-info { position: absolute; top: 12px; right: 12px; width: 42px; height: 42px; font-size: 24px; }
 .eg-title { display: flex; align-items: center; justify-content: center; gap: 10px; }
@@ -550,14 +556,15 @@ body[data-screen="editor"] .toast { bottom: 250px; }
 .eg-arrow svg { width: 100%; height: 100%; overflow: visible; }
 .eg-arrow.right svg { transform: scaleX(-1); }
 .eg-arrow:active { transform: scale(1.15); }
+/* line-height = the box's height: any less and Chrome cuts off the tops of Pusab's digits in a box (0 looks like U) */
 .eg-num {
-  width: 84px; height: 48px; padding: 0 4px; text-align: center; font-family: var(--f-gd); font-size: 22px; color: #fff;
+  width: 84px; height: 48px; line-height: 48px; padding: 0 4px; text-align: center; font-family: var(--f-gd); font-size: 22px; color: #fff;
   border: 0; border-radius: 10px; background: rgba(60, 22, 4, .55); -moz-appearance: textfield; appearance: textfield;
   text-shadow: 1.6px 0 0 #000, -1.6px 0 0 #000, 0 1.6px 0 #000, 0 -1.6px 0 #000, 1.1px 1.1px 0 #000, -1.1px -1.1px 0 #000, 1.1px -1.1px 0 #000, -1.1px 1.1px 0 #000;
 }
 .eg-num::-webkit-outer-spin-button, .eg-num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .eg-num::placeholder { color: rgba(255, 255, 255, .45); font-size: 13px; text-shadow: none; }
-.eg-num.small { width: 66px; height: 34px; font-size: 15px; }
+.eg-num.small { width: 66px; height: 34px; line-height: 34px; font-size: 15px; }
 .eg-add { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px 14px; }
 .eg-off { display: grid; justify-items: center; gap: 3px; }
 .eg-panel .eg-off .gold, .eg-panel .eg-small .gold { font-size: 14px; }
@@ -598,6 +605,7 @@ body[data-screen="editor"] .toast { bottom: 250px; }
     linear-gradient(180deg, #ffffff, #c4c4c4);
 }
 @media (max-width: 760px) {
+  .eg-modal { --top: 16px; }
   .eg-wrap { flex-direction: column; align-items: stretch; gap: 10px; overflow: auto; width: 100%; }
   .eg-panel { width: 100%; max-height: none; overflow: visible; padding: 16px 12px 14px; }
   .eg-side { order: -1; width: auto; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
@@ -605,20 +613,20 @@ body[data-screen="editor"] .toast { bottom: 250px; }
   .eg-side-btn .gold { font-size: 11px; }
   .eg-top { padding: 0 34px 0 0; gap: 8px 14px; }
   .eg-panel .gold { font-size: 17px; }
-  .eg-num { width: 62px; height: 42px; font-size: 18px; }
+  .eg-num { width: 62px; height: 42px; line-height: 42px; font-size: 18px; }
   .eg-arrow { width: 26px; height: 38px; }
   .eg-flags { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .eg-z { min-width: 44px; }
 }
 /* the EDIT OBJECT window: BASE / DETAIL above it, then SPECIAL, the channel pages and RECENT, like Geometry Dash's */
-.eo-modal { z-index: 32; --cell: clamp(30px, min(5.4vh, 3.5vw), 58px); }
+.eo-modal { z-index: 29; --cell: clamp(30px, min(5.4vh, 3.5vw), 58px); }
 .eo-wrap { display: grid; grid-template-columns: auto auto; grid-template-areas: "kind ." "panel side"; gap: 12px 14px; align-items: start; max-width: 100%; }
 .eo-base {
   grid-area: kind; justify-self: start; min-width: calc(var(--cell) * 4.4); padding: calc(var(--cell) * .2) 22px calc(var(--cell) * .24);
   font-size: calc(var(--cell) * .62); --ow: 2.4px; border-radius: 14px;
   background: linear-gradient(180deg, #ffe0fc 0%, #ff94f2 47%, #f070e2 53%, #c444b2 100%);
 }
-.eo-base.only { cursor: default; }
+.eo-base.only, .eo-base.only:hover { cursor: default; filter: grayscale(1) brightness(.6); }     /* nothing selected has a detail color */
 .eo-base.only:active { transform: none; }
 .eo-panel { grid-area: panel; max-height: calc(100vh - 32px - var(--cell) * 1.4); overflow: auto; gap: 12px; padding: 16px 22px 18px; }
 .eo-side { grid-area: side; }
@@ -721,15 +729,19 @@ body[data-screen="editor"] .toast { bottom: 250px; }
   .sq-grid { grid-template-columns: repeat(4, 86px); }
   .sq-btn { height: 52px; font-size: 13px; }
   .ed-top { top: 84px; left: 112px; right: 16px; width: auto; transform: none; }
-  .ed-actions { grid-template-columns: repeat(3, 64px); top: auto; bottom: 40px; }
+  /* the action buttons go to the bottom right (4 across, GO TO LAYER and the layer row last), and the info panel stays left of them */
+  .ed-view { --act-w: calc(4 * 64px + 3 * 9px); }
+  .ed-actions { grid-template-columns: repeat(4, 64px); top: auto; bottom: 40px; }
   .act-btn { height: 50px; font-size: 10.5px; }
-  .ed-actions { grid-template-columns: repeat(4, 64px); }
   .layer-row { grid-column: 2 / -1; height: auto; justify-content: center; }
   .layer-arrow { width: 26px; height: 34px; }
   .layer-num { min-width: 56px; height: 34px; font-size: 18px; }
-  .ed-props { max-width: calc(100% - 32px); }
+  .ed-props { left: 16px; transform: none; max-width: calc(100% - 32px - 12px - var(--act-w)); }
   .ed-pause { grid-template-columns: minmax(0, 1fr); align-items: start; }
   .pz-left { align-self: start; }
+}
+@media (max-width: 1000px) and (max-height: 900px) {     /* a short canvas: the panel reaches up to TEST / FROM HERE, so it starts right of them */
+  .ed-props { left: 112px; max-width: calc(100% - 112px - 16px - 12px - var(--act-w)); }
 }
 @media (max-width: 700px) {
   .palette-items { grid-template-columns: repeat(var(--cols, 5), 50px); grid-auto-rows: 50px; gap: 5px; }
@@ -748,10 +760,22 @@ body[data-screen="editor"] .toast { bottom: 250px; }
   .ed-top { top: 64px; left: 96px; }
   .ed-left { top: 120px; left: 10px; }
   .ed-left .round.big { --r: 60px; }
-  .ed-actions { grid-template-columns: repeat(3, 60px); gap: 6px; }
-  .layer-row { grid-column: 1 / -1; justify-content: flex-end; }
+  /* phones: the action buttons in the bottom right corner, and the info panel one row above them
+     (right of TEST / FROM HERE) that scrolls sideways */
+  .ed-actions { grid-template-columns: repeat(4, 60px); gap: 6px; bottom: 8px; }
   .act-btn { height: 42px; font-size: 9.5px; }
   .layer-num { height: 30px; min-width: 50px; font-size: 16px; }
+  .ed-props {
+    left: 84px; bottom: 154px; transform: none; max-width: calc(100% - 92px);
+    flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; padding: 8px 12px 10px; background: #121a34;      /* solid: it sits over the level name and warnings */
+  }
+  .ed-props > * { flex: none; order: 2; }
+  /* the buttons that open EDIT OBJECT, GO TO LAYER, EDIT GROUP (and a trigger's window) come first, then X, Y and the rest */
+  .ed-props .sel-name { order: 0; }
+  .ed-props .ch-field, .ed-props .sel-layer, .ed-props [data-edit-trigger] { order: 1; }
+}
+@media (max-width: 700px) and (max-height: 839px) {      /* too short for both: the panel goes along the bottom, over the buttons while something is selected */
+  .ed-props { bottom: 8px; }
 }
 @media (max-width: 560px) {
   .tile { --t: clamp(120px, 40vw, 170px); }
