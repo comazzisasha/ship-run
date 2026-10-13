@@ -334,7 +334,6 @@ h1.logo { margin-bottom: 0; font: inherit; }
 .kit-icon:hover { background: rgba(255,255,255,.1); }
 .kit-icon[aria-pressed="true"] { background: rgba(255,255,255,.18); box-shadow: inset 0 0 0 2px rgba(255,255,255,.85); }
 .kit-icon canvas { width: 100%; height: 100%; display: block; }
-.kit-icon .kit-def { position: absolute; inset: auto 0 1px; font-family: var(--f-gd); font-size: 8px; text-align: center; }
 .kit-colors { padding: 14px 18px 12px; display: grid; gap: 14px; justify-items: center; }
 .kit-colors[hidden] { display: none; }
 .kit-slots { display: flex; gap: 20px; justify-content: center; align-items: center; }
@@ -1355,7 +1354,7 @@ body .toast.over.under { top: auto; bottom: calc(10px + env(safe-area-inset-bott
     <div class="kit-row">
       <button type="button" class="round green" id="kitDownload" title="Download as a PNG" aria-label="Download as a PNG"><svg aria-hidden="true"><use href="#i-download"/></svg></button>
       <button type="button" class="round green" id="kitRandom" title="Random icons and colors" aria-label="Random icons and colors"><svg aria-hidden="true"><use href="#i-shuffle"/></svg></button>
-      <button type="button" class="round green" id="kitReset" title="Back to Ship Run's own ship" aria-label="Reset"><svg aria-hidden="true"><use href="#i-restart"/></svg></button>
+      <button type="button" class="round green" id="kitReset" title="Back to the default: cube 1 and ship 1 in lime green and cyan" aria-label="Reset to the default icons"><svg aria-hidden="true"><use href="#i-restart"/></svg></button>
     </div>
     <div class="kit-row" role="tablist" aria-label="Icon type">
       <button type="button" class="round gray kit-form" role="tab" data-kit-tab="cube" title="Cubes" aria-label="Cubes"><canvas></canvas></button>
