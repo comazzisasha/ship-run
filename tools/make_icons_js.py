@@ -2,16 +2,17 @@
 
 Two sources of icons, used in this order:
 
-1. The SSOH texture pack's cubes and ships (only the icons; nothing else from the
-   pack is used). They were cut out of its GJ_GameSheet02-uhd and
-   GJ_GameSheetGlow-uhd sheets into icons-ssoh-uhd.png, and made smaller for
-   icons-ssoh-hd.png and icons-ssoh.png. To cut them again, pass the pack's
-   two .plist files (their .png must be next to them):
+1. Geometry Dash's original cubes (1-142) and ships (1-51) in full quality, with
+   glow. They were cut out of Geometry Dash 2.1's GJ_GameSheet02-uhd and
+   GJ_GameSheetGlow-uhd (2.1 kept the icons on those sheets; the game itself uses
+   the 2.2 sheets, which don't have them) into icons-gd-uhd.png, and made smaller
+   for icons-gd-hd.png and icons-gd.png. To cut them again, pass the two 2.1
+   .plist files (their .png must be next to them):
        python3 tools/make_icons_js.py path/GJ_GameSheet02-uhd.plist path/GJ_GameSheetGlow-uhd.plist
-   Without them, the icons-ssoh sheets already in the repo are kept and only
+   Without them, the icons-gd sheets already in the repo are kept and only
    icons.js is remade.
-2. GJ_GameSheetIcons.png (Geometry Dash's low-quality icon sheet), for icons the
-   pack doesn't have.
+2. GJ_GameSheetIcons.png (Geometry Dash's low-quality icon sheet), for the icons
+   2.1 doesn't have (ships 52-79, cubes 143-248).
 
 Run from the repo folder. Each frame is
 [x, y, width, height, rotated, full width, full height, offset x, offset y],
@@ -21,8 +22,8 @@ import json, os, plistlib, re, sys
 from PIL import Image
 
 ICON = re.compile(r'^(player|ship)_(\d+)_(?:2_|extra_|glow_)?001\.png$')
-SSOH = {'low': ('icons-ssoh.png', 30, 4), 'medium': ('icons-ssoh-hd.png', 60, 2), 'high': ('icons-ssoh-uhd.png', 120, 1)}
-SSOH_JSON = 'tools/icons-ssoh.json'      # the frames of the icons-ssoh sheets, kept for remaking icons.js
+FULL = {'low': ('icons-gd.png', 30, 4), 'medium': ('icons-gd-hd.png', 60, 2), 'high': ('icons-gd-uhd.png', 120, 1)}
+FULL_JSON = 'tools/icons-gd.json'        # the frames of the icons-gd sheets, kept for remaking icons.js
 GD = {'low': ('GJ_GameSheetIcons.png', 30), 'medium': ('GJ_GameSheetIcons-hd.png', 60), 'high': ('GJ_GameSheetIcons-uhd.png', 120)}
 nums = lambda s: [float(n) for n in re.findall(r'-?\d+(?:\.\d+)?', s)]
 
@@ -63,7 +64,7 @@ def pack(images, max_w):
     return pos, (max_w, y + shelf)
 
 
-def make_ssoh(sheet02_plist, glow_plist):
+def make_full(sheet02_plist, glow_plist):
     keep = lambda m: int(m.group(2)) >= 1          # cube 0 isn't a real icon
     parts = []
     for pl in (sheet02_plist, glow_plist):
@@ -72,7 +73,7 @@ def make_ssoh(sheet02_plist, glow_plist):
             if name.endswith('_glow_001') == (pl == glow_plist):
                 parts.append((name, cut(sheet, f), f))
     data = {}
-    for q, (png, ppb, div) in SSOH.items():
+    for q, (png, ppb, div) in FULL.items():
         images, meta = {}, {}
         for name, im, f in parts:
             w, h = max(1, round(im.width / div)), max(1, round(im.height / div))
@@ -85,7 +86,7 @@ def make_ssoh(sheet02_plist, glow_plist):
         out.save(png, optimize=True)
         data[q] = {n: [pos[n][0], pos[n][1], images[n].width, images[n].height, 0, *meta[n]] for n in images}
         print(png, size, len(images), 'icons parts')
-    json.dump({'sheets': {q: [v[0], v[1]] for q, v in SSOH.items()}, 'frames': data}, open(SSOH_JSON, 'w'), separators=(',', ':'))
+    json.dump({'sheets': {q: [v[0], v[1]] for q, v in FULL.items()}, 'frames': data}, open(FULL_JSON, 'w'), separators=(',', ':'))
 
 
 def make_gd():
@@ -101,11 +102,11 @@ def make_gd():
 
 if __name__ == '__main__':
     if len(sys.argv) == 3:
-        make_ssoh(sys.argv[1], sys.argv[2])
+        make_full(sys.argv[1], sys.argv[2])
     sources = []
-    if os.path.exists(SSOH_JSON):
-        sources.append({'name': 'SSOH texture pack', **json.load(open(SSOH_JSON))})
-    sources.append({'name': 'Geometry Dash', **make_gd()})
+    if os.path.exists(FULL_JSON):
+        sources.append({'name': 'Geometry Dash 2.1', **json.load(open(FULL_JSON))})
+    sources.append({'name': 'Geometry Dash (low quality)', **make_gd()})
     with open('icons.js', 'w') as f:
         f.write('// Ship Run icon map, made by tools/make_icons_js.py. Icon sheets in the order they are used:\n')
         f.write('// ' + ', '.join(s['name'] for s in sources) + '.\n')
