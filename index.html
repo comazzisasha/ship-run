@@ -3,16 +3,57 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Ship Run</title>
+<title>Ship Run – Free Geometry Dash-Style Ship Game Online</title>
+<meta name="description" content="Fly the ship through random Geometry Dash-style levels, practice any level, or build your own in the level editor. Free, no download, right in your browser.">
+<link rel="canonical" href="https://ship-run.world/">
+<meta name="theme-color" content="#0065fd">
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="icon" href="/icon-192.png" type="image/png" sizes="192x192">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="preload" href="PUSAB___.ttf" as="font" type="font/ttf" crossorigin>
+<!-- how the page looks when shared -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Ship Run">
+<meta property="og:title" content="Ship Run – Free Geometry Dash-Style Ship Game Online">
+<meta property="og:description" content="Fly the ship through random Geometry Dash-style levels, practice any level, or build your own. Free, right in your browser.">
+<meta property="og:url" content="https://ship-run.world/">
+<meta property="og:image" content="https://ship-run.world/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="The Ship Run main menu with the PLAY and PRACTICE buttons">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Ship Run – Free Geometry Dash-Style Ship Game Online">
+<meta name="twitter:description" content="Fly the ship through random Geometry Dash-style levels, practice any level, or build your own. Free, right in your browser.">
+<meta name="twitter:image" content="https://ship-run.world/og-image.png">
+<!-- what search engines read about the game -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": ["VideoGame", "WebApplication"],
+  "name": "Ship Run",
+  "url": "https://ship-run.world/",
+  "description": "A free, unofficial Geometry Dash fan game focused on ship mode. Fly through random runs of levels, practice any level on its own, or build levels in the editor. Plays in the browser, no download.",
+  "image": "https://ship-run.world/og-image.png",
+  "genre": ["Arcade", "Rhythm", "Platformer"],
+  "playMode": "SinglePlayer",
+  "gamePlatform": "Web browser",
+  "applicationCategory": "GameApplication",
+  "operatingSystem": "Any",
+  "inLanguage": "en",
+  "isAccessibleForFree": true,
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "author": { "@type": "Person", "name": "GD Interrobang" }
+}
+</script>
 <style>
 /* Ship Run, Geometry Dash look: blue gradient sky, green square buttons with a
    black outline and white ring, brown GD lists and popups, gold titles, and
    Pusab for nearly all text. The Pusab font file must sit next to this file. */
 @font-face {
   font-family: 'Pusab';
-  src: url('PUSAB_____.ttf') format('truetype'), url('PUSAB___.TTF') format('truetype'), url('PUSAB___.ttf') format('truetype'),
-       url('Pusab.ttf') format('truetype'), url('pusab.ttf') format('truetype'), url('Pusab.otf') format('opentype');
-  font-display: block;
+  src: url('PUSAB___.ttf') format('truetype');
+  font-display: swap;
 }
 :root {
   --sky-top: #0065fd;
@@ -156,6 +197,17 @@ h1, h2, h3, p { margin: 0; }
 .tile-label { font-family: var(--f-gd); font-size: calc(var(--t) * .14); --ow: calc(var(--t) * .015); line-height: 1; }
 .menu-foot { position: relative; z-index: 1; margin-top: auto; padding: 36px 16px calc(26px + env(safe-area-inset-bottom, 0px)); display: grid; gap: 6px; text-align: center; font: 17px/1.45 var(--f-text); text-shadow: 0 1px 2px rgba(0,0,0,.4); }
 .menu-foot .keys { color: #bfe6ff; }
+h1.logo { margin-bottom: 0; font: inherit; }
+.about { justify-self: center; width: min(720px, 100%); margin-top: 6px; text-align: left; }
+.about summary { cursor: pointer; text-align: center; font-family: var(--f-gd); font-size: 15px; color: #fff; list-style: none; padding: 6px 0; text-shadow: 0 0 0 #000, 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000; }
+.about summary::-webkit-details-marker { display: none; }
+.about summary::before { content: '\25B8  '; }
+.about[open] summary::before { content: '\25BE  '; }
+.about[open] { background: rgba(0, 20, 60, .55); border: 2px solid rgba(255,255,255,.25); border-radius: 12px; padding: 4px 18px 12px; }
+.about h2 { margin: 6px 0; font-family: var(--f-gd); font-size: 18px; color: #ffe14d; font-weight: normal; text-shadow: 0 0 0 #000, 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000; }
+.about p { margin: 8px 0; font-size: 15px; }
+.about a { color: #8bfff7; }
+.about .small { font-size: 13px; color: #bfe6ff; }
 .menu-foot .credit { margin: 10px 0 0; font-family: var(--f-gd); font-size: clamp(16px, 3.2vw, 28px); line-height: 1.35; color: #ffe14d; text-shadow: 0 0 0 #000, 2px 2px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 0 4px 6px rgba(0,0,0,.6); overflow-wrap: anywhere; }
 
 /* ---------- pages ---------- */
@@ -990,7 +1042,7 @@ body .toast.over.under { top: auto; bottom: calc(10px + env(safe-area-inset-bott
   </symbol>
 </svg>
 
-<div id="app">
+<main id="app">
 
   <section id="scr-menu" class="screen">
     <svg class="corner tl" aria-hidden="true"><use href="#i-corner"/></svg>
@@ -1007,14 +1059,15 @@ body .toast.over.under { top: auto; bottom: calc(10px + env(safe-area-inset-bott
         <span class="round-cap">SETTINGS</span>
       </div>
     </div>
-    <div class="logo">
+    <h1 class="logo">
       <svg id="titleSvg" viewBox="0 0 1000 200" role="img" aria-label="Ship Run">
-        <text x="500" y="152" text-anchor="middle" font-family="Pusab, 'Arial Black', sans-serif" font-size="150" fill="#001a52" stroke="#001a52" stroke-width="34" stroke-linejoin="round" transform="translate(9 12)" opacity=".55">SHIP RUN</text>
-        <text x="500" y="152" text-anchor="middle" font-family="Pusab, 'Arial Black', sans-serif" font-size="150" fill="#fff" stroke="#fff" stroke-width="34" stroke-linejoin="round">SHIP RUN</text>
-        <text class="title-main" x="500" y="152" text-anchor="middle" font-family="Pusab, 'Arial Black', sans-serif" font-size="150" fill="url(#g-title)" stroke="#000" stroke-width="20" stroke-linejoin="round" paint-order="stroke">SHIP RUN</text>
+        <defs><text id="titleText" x="500" y="152" text-anchor="middle" font-family="Pusab, 'Arial Black', sans-serif" font-size="150">SHIP RUN</text></defs>
+        <use href="#titleText" fill="#001a52" stroke="#001a52" stroke-width="34" stroke-linejoin="round" transform="translate(9 12)" opacity=".55"/>
+        <use href="#titleText" fill="#fff" stroke="#fff" stroke-width="34" stroke-linejoin="round"/>
+        <use href="#titleText" class="title-main" fill="url(#g-title)" stroke="#000" stroke-width="20" stroke-linejoin="round" paint-order="stroke"/>
       </svg>
       <span class="subtitle gold">SHIP MODE</span>
-    </div>
+    </h1>
     <div class="tiles">
       <button class="tile" id="btnPlay" aria-label="Play a random run">
         <span class="tile-face"><svg class="tile-icon" aria-hidden="true"><use href="#i-play"/></svg><span class="tile-label" data-fit>PLAY</span></span>
@@ -1026,11 +1079,25 @@ body .toast.over.under { top: auto; bottom: calc(10px + env(safe-area-inset-bott
         <span class="tile-face"><svg class="tile-icon" aria-hidden="true"><use href="#i-tools"/></svg><span class="tile-label" data-fit>EDITOR</span></span>
       </button>
     </div>
-    <div class="menu-foot">
+    <footer class="menu-foot">
       <p id="menuNote"></p>
       <p class="keys">Hold Space, Up, the mouse button or your finger to fly. Esc pauses.</p>
+      <noscript><p class="keys">Ship Run is a game that runs in your browser, so it needs JavaScript. Turn JavaScript on to play.</p></noscript>
+      <details class="about">
+        <summary>ABOUT SHIP RUN</summary>
+        <h2>A free Geometry Dash-style ship game</h2>
+        <p>Ship Run is a free fan game based on the ship mode of Geometry Dash. Hold to fly up, let go to fall, and steer through
+          spikes, saws, blocks and portals. It runs right in your browser on a computer, phone or tablet, with nothing to download.</p>
+        <p><b>Play</b> starts a random run: 5 levels picked at random, back to back. Crash once and a new run starts with new levels.
+          <b>Practice</b> lets you play one level on its own, as many times as you like, and collect its user coins.</p>
+        <p>Speed portals, gravity portals, mini and big size portals, teleport portals, pads and orbs all work like in Geometry Dash.
+          Turn on Dev Mode in Settings to open the level editor, with editor layers, Edit Group and Edit Object like the real game.</p>
+        <p><a href="how-to-play.html">How to play Ship Run: controls, portals and the level editor</a></p>
+        <p class="small">Ship Run is an unofficial fan project. It is not made by or affiliated with RobTop Games.
+          Geometry Dash, its art and its fonts belong to RobTop Games.</p>
+      </details>
       <p class="credit">Website created by GD Interrobang  :<br>Pretty much everything other than that belongs to RobTop Games.</p>
-    </div>
+    </footer>
   </section>
 
   <section id="scr-practice" class="screen page" hidden>
@@ -1084,7 +1151,7 @@ body .toast.over.under { top: auto; bottom: calc(10px + env(safe-area-inset-bott
   <section id="scr-play" class="screen" hidden>
     <div class="stage" id="stage">
       <div class="frame" id="frame">
-        <canvas id="game" aria-label="Game"></canvas>
+        <canvas id="game" aria-label="Ship Run game: fly the ship through the level">Ship Run needs a browser that can draw on a canvas.</canvas>
         <div class="hud">
           <div class="hud-progress" aria-hidden="true">
             <div class="progress"><div class="progress-fill" id="progFill"></div></div>
@@ -1310,7 +1377,7 @@ body .toast.over.under { top: auto; bottom: calc(10px + env(safe-area-inset-bott
   <div class="modal eg-modal" id="egPop" hidden></div>
   <div class="modal eo-modal" id="eoPop" hidden></div>
   <div class="toast" id="toast" role="status" hidden></div>
-</div>
+</main>
 <script src="levels.js"></script>
 <script src="sprites.js"></script>
 <script src="game.js"></script>

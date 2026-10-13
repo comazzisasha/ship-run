@@ -36,11 +36,11 @@ const IMAGES = {
   orb:           'Orb.png',
   pad:           'Pad.png',
   saw:           'RegularSawblade01.png',
-  speed_half:    'slow speed.png',
-  speed_normal:  'normal speed.png',
-  speed_double:  'double speed.png',
-  speed_triple:  'triple speed.png',
-  speed_quad:    'quad speed.png',
+  speed_half:    'speed-half.png',
+  speed_normal:  'speed-normal.png',
+  speed_double:  'speed-double.png',
+  speed_triple:  'speed-triple.png',
+  speed_quad:    'speed-quad.png',
   'gravity_1':   'NormalGravity.png',
   'gravity_-1':  'FlipGravity.png',
   size_mini:     'miniportal.png',
@@ -4223,7 +4223,7 @@ function afterFont() {
   edRequestDraw();
   if (!gdFont && !fontWarned) {
     fontWarned = true;
-    toast('The Pusab font did not load. Put PUSAB_____.ttf in the same folder as index.html.');
+    toast('The Pusab font did not load. Put PUSAB___.ttf in the same folder as index.html.');
   }
 }
 
@@ -4542,7 +4542,7 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
-document.title = GAME_TITLE;
+if (!document.title.startsWith(GAME_TITLE)) document.title = GAME_TITLE;   // keeps the longer title in index.html
 renderMoveButtons();
 renderPaletteTabs();
 renderPalette();
