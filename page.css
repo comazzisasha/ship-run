@@ -1,0 +1,22 @@
+/* Shared look for the small text pages (How to Play, 404): the game's blue sky and Pusab titles */
+@font-face { font-family: 'Pusab'; src: url('PUSAB___.ttf') format('truetype'); font-display: swap; }
+:root { color-scheme: dark; }
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; background: linear-gradient(#0065fd, #002e73) fixed; color: #fff;
+  font: 17px/1.6 system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; }
+.page { max-width: 760px; margin: 0 auto; padding: 32px 16px 48px; }
+h1, h2 { font-family: Pusab, 'Arial Black', sans-serif; font-weight: normal; letter-spacing: .02em;
+  text-shadow: 0 0 0 #000, 2px 2px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000; }
+h1 { font-size: clamp(30px, 7vw, 52px); color: #b8f74c; margin: 0 0 8px; line-height: 1.15; }
+h2 { font-size: clamp(20px, 4vw, 28px); color: #ffe14d; margin: 32px 0 8px; }
+p, li { text-shadow: 0 1px 2px rgba(0,0,0,.4); }
+a { color: #8bfff7; }
+.play { display: inline-block; margin: 12px 0; padding: 12px 28px; border-radius: 12px; border: 3px solid #000;
+  background: linear-gradient(#e2ff8e, #76df2b 52%, #3a9612); color: #000; text-decoration: none;
+  font-family: Pusab, 'Arial Black', sans-serif; font-size: 22px; box-shadow: 0 0 0 3px #fff; }
+dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 16px; }
+dt { font-weight: 700; color: #ffe14d; }
+dd { margin: 0; }
+.small { font-size: 14px; color: #bfe6ff; }
+footer { margin-top: 40px; border-top: 1px solid rgba(255,255,255,.25); padding-top: 12px; }
+@media (max-width: 560px) { dl { grid-template-columns: minmax(0, 1fr); gap: 2px; } dd { margin-bottom: 8px; } }

@@ -1,0 +1,16 @@
+{
+  "name": "Ship Run",
+  "short_name": "Ship Run",
+  "description": "A free Geometry Dash-style ship game that runs in your browser.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#002e73",
+  "theme_color": "#0065fd",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
