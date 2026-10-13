@@ -1808,7 +1808,6 @@ function drawGame() {
   ctx.setTransform(k, 0, 0, k, 0, 0);
   drawSky(ctx, VIEW_WIDTH, 400, st.bg, camL);
   ctx.setTransform(k, 0, 0, k, -camL * k, 0);
-  drawStage(ctx, camL, camL + VIEW_WIDTH, 0, 400, st.ground, st.line);
   if (gdFont && settings.showAttempts && game.attemptX > camL - 200) {
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     outlinedText(ctx, 'Attempt ' + game.attempts, game.attemptX, 172, 22, 5);
@@ -1824,6 +1823,8 @@ function drawGame() {
   drawPortalFronts(ctx, behind);
   if (front.length) drawObjects(ctx, front);
   fadeShipX = null;
+  // the floor and ceiling go over everything, so anything reaching past them is hidden (like Geometry Dash)
+  drawStage(ctx, camL, camL + VIEW_WIDTH, 0, 400, st.ground, st.line);
   if (game.deathHitboxes || game.showHitboxes) {
     drawHitboxes(ctx, vis, { worldX: wx, y: yI, sizeScale: Me.sizeScale, rot: Me.rot });
   }
@@ -2647,7 +2648,6 @@ function drawEditor() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   drawSky(ctx, W, H, sc(CH.BG), c.x, Math.max(H, 400 * c.scale));
   ctx.setTransform(k, 0, 0, k, -c.x * k, -c.y * k);
-  drawStage(ctx, x0, x1, y0, y1, sc(CH.GROUND), sc(CH.LINE));
 
   // grid
   const cs = Math.max(1, Math.floor(x0 / g)), ce = Math.ceil(x1 / g);
@@ -2677,6 +2677,8 @@ function drawEditor() {
   DRAW.fade = edFade;                // other editor layers and hidden objects are see-through
   drawObjects(ctx, vis);
   DRAW.fade = null;
+  // the floor and ceiling cover whatever reaches past them, as in the game
+  drawStage(ctx, x0, x1, y0, y1, sc(CH.GROUND), sc(CH.LINE));
 
   // teleport links
   ctx.setLineDash([3 / c.scale, 3 / c.scale]); ctx.lineWidth = 1.2 / c.scale; ctx.strokeStyle = 'rgba(255,255,255,0.8)';
