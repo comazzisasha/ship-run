@@ -28,3 +28,21 @@ game works exactly the same.
 The analytics code is the `track()` helper near the top of section 8 of
 `game.js`, plus the GoatCounter `<script>` tag at the end of `<head>` in
 `index.html`.
+
+## Icon kit
+
+The ICONS button on the main menu opens an icon kit for picking your cube, ship
+and colors. It is based on [GDBrowser's Online Icon Kit](https://gdbrowser.com/iconkit/)
+by GD Colon. Your choice is saved in your browser.
+
+The icons are cut out of Geometry Dash's own files:
+
+- `GJ_GameSheetIcons.png` + `.plist`: the low-quality sheet that is already in the
+  repo. `icons.js` says where each icon is on it. Remake `icons.js` with
+  `python3 tools/make_icons_js.py` if you replace the sheet, or if you add
+  `GJ_GameSheetIcons-hd` / `-uhd` versions.
+- An `icons/` folder (optional, for every icon in sharp quality, with glow): copy
+  the `player_XX` and `ship_XX` files from Geometry Dash's `Resources/icons` folder,
+  for example `ship_05-uhd.png` + `ship_05-uhd.plist`. The game uses them
+  automatically: `-uhd` for High graphics, `-hd` for Medium and the plain ones for
+  Low. Any icon missing from the folder comes from `GJ_GameSheetIcons` instead.
