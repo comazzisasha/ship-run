@@ -378,6 +378,28 @@ body[data-screen="editor"] .toast { bottom: 250px; }
 body .toast.over { top: calc(10px + env(safe-area-inset-top, 0px)); bottom: auto; width: max-content; background: rgba(0, 0, 0, .9); }   /* while EDIT GROUP / EDIT OBJECT are open */
 body .toast.over.under { top: auto; bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }     /* placeToast(): the bottom hides fewer of their buttons */
 
+/* ---------- hack menu (dev mode, Tab) ---------- */
+#hackMenu { position: fixed; inset: 0; z-index: 900; pointer-events: none; font: 12px/1.2 Arial, Helvetica, sans-serif; color: #eee; }
+#hackMenu[hidden] { display: none; }
+.hk-hint { position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); margin: 0; padding: 3px 10px; background: rgba(0, 0, 0, .7); border-radius: 4px; font-size: 11px; letter-spacing: .04em; white-space: nowrap; color: #ccc; }
+.hk-win { position: absolute; width: 168px; pointer-events: auto; background: rgba(24, 24, 28, .94); box-shadow: 0 4px 14px rgba(0, 0, 0, .55); border-radius: 3px; overflow: hidden; }
+.hk-head { margin: 0; padding: 5px 8px; font-size: 13px; font-weight: bold; text-align: center; background: var(--hk); color: #fff; text-shadow: 0 1px 1px rgba(0, 0, 0, .5); cursor: grab; user-select: none; -webkit-user-select: none; touch-action: none; }
+.hk-head:active { cursor: grabbing; }
+.hk-body { display: grid; padding: 2px 0 3px; }
+.hk-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; margin: 0; padding: 3px 8px 3px 10px; border: 0; border-left: 3px solid transparent; background: none; color: #ddd; font: inherit; text-align: left; cursor: pointer; }
+.hk-row:hover { background: rgba(255, 255, 255, .08); }
+.hk-row i { flex: none; width: 10px; height: 10px; border: 1px solid #777; border-radius: 2px; }
+.hk-row.on { border-left-color: var(--hk); color: #fff; }
+.hk-row.on i { background: var(--hk); border-color: var(--hk); }
+.hk-act span::before { content: '▸ '; color: var(--hk); }
+.hk-in { cursor: default; }
+.hk-in input { width: 58px; margin-left: auto; padding: 1px 4px; border: 1px solid #555; border-radius: 2px; background: #111; color: #fff; font: inherit; }
+.hk-in b { font-weight: normal; color: #aaa; }
+.hk-presets { display: grid; grid-template-columns: repeat(6, 1fr); gap: 2px; padding: 3px 8px 2px 10px; }
+.hk-presets button { min-width: 0; padding: 1px 0; border: 1px solid #444; border-radius: 2px; background: #222; color: #ccc; font: 11px Arial, sans-serif; cursor: pointer; }
+.hk-presets button:hover { background: #333; }
+.hk-presets button.on { border-color: var(--hk); color: #fff; }
+
 /* ---------- play ---------- */
 #scr-play { background: #00225e; }
 .stage { position: relative; flex: 1; min-height: 0; display: grid; place-items: center; touch-action: none; user-select: none; -webkit-user-select: none; }
@@ -389,7 +411,13 @@ body .toast.over.under { top: auto; bottom: calc(10px + env(safe-area-inset-bott
 .progress-fill { height: 100%; width: 0; background: linear-gradient(180deg, #c7ff8a, #59e021 55%, #34b30f); }
 #hudPct { font-family: var(--f-gd); font-size: calc(var(--u) * 13); --ow: calc(var(--u) * 1.7); min-width: 3.4em; }
 .hud-level { position: absolute; top: calc(var(--u) * 9); left: calc(var(--u) * 10); font-family: var(--f-gd); font-size: calc(var(--u) * 10); --ow: calc(var(--u) * 1.4); }
-.hud-noclip { position: absolute; top: calc(var(--u) * 24); left: calc(var(--u) * 10); font-family: var(--f-gd); font-size: calc(var(--u) * 9); color: #ff6b5c; text-shadow: 0 0 0 #000, 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000; }
+.hud-status { position: absolute; top: calc(var(--u) * 24); left: calc(var(--u) * 10); display: grid; justify-items: start; gap: calc(var(--u) * 3); }
+.hud-labels { display: grid; justify-items: start; gap: calc(var(--u) * 2); font-family: var(--f-gd); font-size: calc(var(--u) * 8); --ow: calc(var(--u) * 1.2); opacity: .9; }
+.hud-labels:empty { display: none; }
+.hud-labels .hit { color: #ff6b5c; }
+.hk-dot { display: block; width: calc(var(--u) * 7); height: calc(var(--u) * 7); border-radius: 50%; background: #3fe05a; box-shadow: 0 0 0 calc(var(--u) * 1.2) #000; }
+.hk-dot.red { background: #ff3b3b; }
+.hud-noclip { font-family: var(--f-gd); font-size: calc(var(--u) * 9); color: #ff6b5c; text-shadow: 0 0 0 #000, 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000; }
 .pause-btn { position: absolute; top: calc(var(--u) * 6); right: calc(var(--u) * 8); --r: calc(var(--u) * 28); pointer-events: auto; }
 .pause-btn svg { width: calc(var(--r) * .72); height: calc(var(--r) * .72); }
 .overlay { position: absolute; inset: 0; display: grid; place-items: center; align-content: center; gap: calc(var(--u) * 12); padding: calc(var(--u) * 14); background: rgba(0, 0, 0, .38); cursor: default; }
@@ -1278,7 +1306,10 @@ body .toast.over.under { top: auto; bottom: calc(10px + env(safe-area-inset-bott
             <span class="o" id="hudPct">0%</span>
           </div>
           <span class="hud-level o" id="badgeLevel"></span>
-          <span class="hud-noclip" id="badgeNoclip" hidden>NOCLIP</span>
+          <div class="hud-status">
+            <span class="hud-noclip" id="badgeNoclip" hidden>NOCLIP</span>
+            <div class="hud-labels o" id="hudLabels"></div>
+          </div>
           <button class="round dark pause-btn" id="btnPause" aria-label="Pause"><svg><use href="#i-pause"/></svg></button>
         </div>
         <div class="overlay" id="overlay" hidden></div>
