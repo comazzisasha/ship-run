@@ -1645,8 +1645,9 @@ const kit = (() => {
   return k;
 })();
 function saveKit() { try { localStorage.setItem(KIT_KEY, JSON.stringify(kit)); } catch (e) { /* ignore */ } }
-// The picked cube or ship, or null for Ship Run's own picture (also with My Pictures art, or while it loads)
-function kitArt(form, look = kit) { return look[form] && settings.art === 'gd' ? iconArt(form, look[form], look) : null; }
+// The picked cube or ship, or null for Ship Run's own picture (or while it loads).
+// A picked icon is used whatever the ART setting is: picking it is the choice.
+function kitArt(form, look = kit) { return look[form] ? iconArt(form, look[form], look) : null; }
 let iconsTimer = 0;
 function iconsChanged() {
   clearTimeout(iconsTimer);
@@ -4908,7 +4909,7 @@ function drawKitTileArt(btn) {
   if (id && iconMissing(form, id)) { btn.hidden = true; kitUI.seen.delete(btn); }
 }
 function renderKitGrid() {
-  const grid = $('kitGrid'), form = kitUI.tab, n = kitCount(form), key = form + n + settings.quality + settings.art;
+  const grid = $('kitGrid'), form = kitUI.tab, n = kitCount(form), key = form + n + settings.quality;
   if (kitUI.built !== key) {
     kitUI.built = key;
     if (kitUI.observer) kitUI.observer.disconnect();
