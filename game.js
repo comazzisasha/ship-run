@@ -78,7 +78,6 @@ const velUnit = 60 * pxPerUnit;
 // so this changes nothing for every other object.
 const nearRange = 3 * gridSize;
 let pressed = false;
-let noClip = false;
 const scale = 0.3;               // icon tuning, "scale" in CMU
 
 const speed_lookup = { half: 8.4, normal: 10.4, double: 12.9, triple: 15.6, quad: 19.2 };
@@ -684,7 +683,7 @@ class Player {
   }
 
   Die() {
-    if (noClip) return;
+    if (hk('noclip')) { this.clipped = true; return; }   // noclip: remember it for Noclip Accuracy / Deaths
     this.alive = false;
   }
 
@@ -1192,11 +1191,15 @@ function drawPortalSpr(ctx, key, cx, cy, h, pass) {
 // of each level part (or one for the editor), the time for fades, and whether
 // this is the game (triggers hidden, coins spin) or the editor.
 const DEFAULT_COLORS = new ColorState({});
-const DRAW = { parts: null, cs: DEFAULT_COLORS, now: 0, play: false, coinTime: 0, fade: null };
+const DRAW = { parts: null, cs: DEFAULT_COLORS, now: 0, play: false, layout: false, coinTime: 0, fade: null };
 function colorsOf(o) { return (DRAW.parts && DRAW.parts[o.part] && DRAW.parts[o.part].colors) || DRAW.cs; }
 // The colors one object is drawn with right now. HSV (from Edit Object) changes
 // the color of just this object, not the whole channel.
 function objColors(o) {
+  if (DRAW.layout) {     // Show Layout: every object fully visible in its default colors
+    const res = id => id ? DEFAULT_COLORS.resolve(id, 0) : null;
+    return { main: res(o.ch0), det: res(o.dch0), alpha: 1 };
+  }
   const cs = colorsOf(o), now = DRAW.now;
   let alpha = 1;
   for (const gid of o.groups || []) alpha *= cs.groupAlpha(gid, now);
@@ -1229,7 +1232,7 @@ const COIN_FRAMES = [1, 2, 3, 4, 3, 2];      // the silver coin turning around
 function drawObject(ctx, o, pass) {
   if (pass === 'front' && o.kind !== 'portal') return;
   if (o.sub) return;
-  if (DRAW.play && (o.hide || (o.highDetail && settings.lowDetail))) return;
+  if (DRAW.play && !DRAW.layout && (o.hide || (o.highDetail && settings.lowDetail))) return;
   const cols = objColors(o);
   const alpha = cols.alpha * (DRAW.fade ? DRAW.fade(o) : 1);
   if (alpha <= 0.004) return;
@@ -1574,7 +1577,7 @@ function track(name) {
 }
 // Passing the end of a level in a run or in Practice (not editor tests or plays)
 function trackLevelDone(pi) {
-  if (game.mode === 'test' || game.returnTo === 'levels') return;
+  if (game.mode === 'test' || game.returnTo === 'levels' || game.cheated) return;   // runs with hacks don't count
   const part = world.parts[pi];
   if (part) track('level-complete:' + part.id);
 }
@@ -1602,10 +1605,11 @@ function outlinedText(ctx, text, x, y, px, lineW, fill = '#fff') {
 const game = {
   mode: null, level: null, pool: null, startScroll: 0, returnTo: 'menu',
   acc: 0, dead: false, deathTimer: 0, finished: false, paused: false, attempts: 0,
-  showHitboxes: false, deathHitboxes: false, teleported: false,
+  deathHitboxes: false, teleported: false,
   prevScroll: 0, prevY: position, prevTheta: 0, trail: [], lastTrail: null,
   cssScale: 1, dpr: 1, hudKey: '', attemptX: 0,
-  time: 0, coinPart: 0, usedNoclip: false, runCoins: 0, stage: null,
+  time: 0, coinPart: 0, cheated: false, runCoins: 0, stage: null,
+  nc: { steps: 0, dead: 0, deaths: 0, was: false }, clicks: 0,
 };
 const gameCanvas = $('game'), gameCtx = gameCanvas.getContext('2d');
 
@@ -1618,7 +1622,6 @@ function startPlay(mode, opts = {}) {
   game.attempts = 0;
   game.lastTrail = null;
   game.paused = false;
-  if (mode === 'run') noClip = false;
   upInput = false; pressed = false;
   if (mode !== 'run') world = new World([game.level]);
   showScreen('play');
@@ -1637,7 +1640,8 @@ function restart() {
   game.attemptX = scrollX + shipCenterX + 150;
   game.trail = [];
   game.prevScroll = scrollX; game.prevY = Me.y; game.prevTheta = Me.theta;
-  game.time = 0; game.coinPart = world.partAt(shipCenterX + scrollX); game.usedNoclip = noClip; game.runCoins = 0; game.stage = null;
+  game.nc = { steps: 0, dead: 0, deaths: 0, was: false }; game.clicks = 0;
+  game.time = 0; game.coinPart = world.partAt(shipCenterX + scrollX); game.cheated = cheatsOn(); game.runCoins = 0; game.stage = null;
   // Testing from the middle: triggers behind the ship have already happened (no fade)
   const sx0 = shipCenterX + scrollX, xt = world.xTriggers;
   while (world.nextTrigger < xt.length && xt[world.nextTrigger].tx < sx0) fireTrigger(xt[world.nextTrigger++], 0, true);
@@ -1655,7 +1659,7 @@ function fireTrigger(o, now, instant) {
 function playSpecials() {
   const sx = shipCenterX + scrollX, now = game.time, xt = world.xTriggers;
   while (world.nextTrigger < xt.length && xt[world.nextTrigger].tx <= sx) fireTrigger(xt[world.nextTrigger++], now);
-  if (noClip) game.usedNoclip = true;
+  if (cheatsOn()) game.cheated = true;
   if (Me.alive) {
     const poly = Me.hitPoly(sx);
     for (const o of world.near(sx)) {
@@ -1668,7 +1672,7 @@ function playSpecials() {
   while (game.coinPart < pi) { trackLevelDone(game.coinPart); keepCoins(game.coinPart++); }
 }
 function keepCoins(pi) {
-  if (game.mode === 'test' || game.usedNoclip) return;
+  if (game.mode === 'test' || game.cheated || hk('safeMode')) return;
   const part = world.parts[pi];
   if (!part) return;
   for (const o of world.coins) if (o.part === pi && o.got) saveCoin(part.id, o.key);
@@ -1679,9 +1683,18 @@ function step() {
   game.prevScroll = scrollX; game.prevY = Me.y; game.prevTheta = Me.theta;
   game.teleported = false;
   if (!Me.alive) return;
+  Me.clipped = false;
   Me.Update();
   pressed = false;
   Me.render();
+  // Noclip Accuracy: the share of steps not spent inside something deadly.
+  // Noclip Deaths: how many times the ship went from safe to "would be dead".
+  if (Me.clipped || hk('noclip')) {
+    const nc = game.nc;
+    nc.steps++;
+    if (Me.clipped) { nc.dead++; if (!nc.was) nc.deaths++; }
+    nc.was = Me.clipped;
+  }
   for (const saw of world.saws) saw.spin += sawSpin * 360 * dt;
   if (game.mode === 'test' && game.trail.length < 30000) game.trail.push([shipCenterX + scrollX, Me.hb.bottom - Me.hb.size / 2]);
   playSpecials();
@@ -1693,8 +1706,8 @@ function step() {
 
 function onDeath() {
   game.dead = true;
-  game.deathHitboxes = true;          // setHitboxes(True)
-  game.deathTimer = 0.5 + dt;         // sleep(0.5) on the next step, then restart()
+  game.deathHitboxes = hk('deathHitboxes');   // setHitboxes(True)
+  game.deathTimer = hk('instantRespawn') ? 0 : 0.5 + dt;   // sleep(0.5) on the next step, then restart()
   if (game.mode === 'test') game.lastTrail = { pts: game.trail, died: true };
 }
 
@@ -1775,7 +1788,7 @@ function coinLine() {
   if (!world.coins.length) return '';
   if (game.mode === 'run') return `<span class="done-line o">COINS: ${game.runCoins} OF ${world.coins.length}</span>`;
   const dots = world.coins.slice().sort((a, b) => a.X - b.X).map(o => `<i class="coin-dot${o.got ? ' got' : ''}"></i>`).join('');
-  return `<span class="done-line o coin-line">COINS: ${dots}</span>${game.usedNoclip ? '<span class="done-line o small">NOCLIP WAS ON, SO COINS WERE NOT SAVED</span>' : ''}`;
+  return `<span class="done-line o coin-line">COINS: ${dots}</span>${game.cheated ? '<span class="done-line o small">HACKS WERE ON, SO COINS WERE NOT SAVED</span>' : ''}`;
 }
 function showComplete() {
   const run = game.mode === 'run';
@@ -1824,8 +1837,10 @@ function drawGame() {
   const yI = jump ? Me.y : game.prevY + (Me.y - game.prevY) * a;
   const thI = game.prevTheta + (Me.theta - game.prevTheta) * a;
   const now = game.time + (frozen ? 0 : Math.min(game.acc, dt));
-  DRAW.parts = world.parts; DRAW.now = now; DRAW.play = true; DRAW.coinTime = performance.now() / 1000;
-  const st = stageColors(sI, now);
+  const layout = hk('layout');
+  DRAW.parts = world.parts; DRAW.now = now; DRAW.play = true; DRAW.layout = layout; DRAW.coinTime = performance.now() / 1000;
+  let st = stageColors(sI, now);
+  if (layout) st = { bg: CH_DEFAULT[CH.BG], ground: CH_DEFAULT[CH.GROUND], line: [255, 255, 255] };
 
   // The camera only changes where things are drawn. The ship is still at
   // shipCenterX + scrollX in the level, exactly like CMU.
@@ -1837,24 +1852,26 @@ function drawGame() {
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     outlinedText(ctx, 'Attempt ' + game.attempts, game.attemptX, 172, 22, 5);
   }
-  const vis = world.visible(camL, camL + VIEW_WIDTH);
+  let vis = world.visible(camL, camL + VIEW_WIDTH);
+  if (layout) vis = vis.filter(o => o.kind !== 'none');   // Show Layout: no deco, only objects with a hitbox
   const wx = shipCenterX + sI;
   // B layers (and objects with no Z layer) go behind the ship, T layers in front of it
   const behind = [], front = [];
   for (const o of vis) (o.zRank >= Z_FRONT ? front : behind).push(o);
-  fadeShipX = wx;
+  fadeShipX = layout ? null : wx;
   drawObjects(ctx, behind, 'back');
-  drawPlayer(ctx, wx, yI, thI, Me.sizeScale, Me.gravity, upInput && Me.alive);
+  if (!hk('hidePlayer')) drawPlayer(ctx, wx, yI, thI, Me.sizeScale, Me.gravity, upInput && Me.alive);
   drawPortalFronts(ctx, behind);
   if (front.length) drawObjects(ctx, front);
   fadeShipX = null;
   // the floor and ceiling go over everything, so anything reaching past them is hidden (like Geometry Dash)
   drawStage(ctx, camL, camL + VIEW_WIDTH, 0, 400, st.ground, st.line);
-  if (game.deathHitboxes || game.showHitboxes) {
+  if (game.deathHitboxes || hk('hitboxes')) {
     drawHitboxes(ctx, vis, { worldX: wx, y: yI, sizeScale: Me.sizeScale, rot: Me.rot });
   }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  DRAW.parts = null; DRAW.play = false; DRAW.now = 0;
+  if (Me.clipped && hk('ncTint')) { ctx.fillStyle = 'rgba(255, 0, 0, 0.22)'; ctx.fillRect(0, 0, gameCanvas.width, gameCanvas.height); }
+  DRAW.parts = null; DRAW.play = false; DRAW.layout = false; DRAW.now = 0;
   updateHud(false);
 }
 // BG, GROUND and LINE come from the level the ship is in. When a run moves on
@@ -1889,13 +1906,14 @@ function runLabel() {
 function updateHud(force) {
   const pct = currentPct();
   const label = game.mode === 'run' ? runLabel() : game.mode === 'test' ? 'TESTING: ' + (game.level ? game.level.name : '') : (game.level ? game.level.name : '');
-  const key = pct + '|' + label + '|' + noClip + '|' + game.mode;
+  const key = pct + '|' + label + '|' + hk('noclip') + '|' + hk('hidePause') + '|' + game.mode;
   if (!force && key === game.hudKey) return;
   game.hudKey = key;
   $('progFill').style.width = pct + '%';
   $('hudPct').textContent = pct + '%';
   $('badgeLevel').textContent = label;
-  $('badgeNoclip').hidden = !noClip;
+  $('badgeNoclip').hidden = !hk('noclip');
+  $('btnPause').hidden = hk('hidePause');
   $('btnPause').setAttribute('aria-label', game.mode === 'test' ? 'Back to the editor' : 'Pause');
   applyHudSettings();
 }
@@ -1904,6 +1922,222 @@ function applyHudSettings() {
   document.querySelector('.hud-progress .progress').style.visibility = settings.showProgress ? '' : 'hidden';
   $('hudPct').style.visibility = settings.showPercent ? '' : 'hidden';
   $('badgeLevel').hidden = !settings.showLevelName;
+}
+
+
+// --- the hack menu (dev mode only): Tab opens it, Tab again closes it ---
+// Like Mega Hack: a few windows of switches you can drag around. Everything is
+// kept in this browser. With dev mode off no hack does anything (Hitboxes on
+// Death keeps its normal "on"), and the menu can't be opened.
+const HACKS_KEY = 'shiprun.hacks.v1';
+const HACK_DEFAULTS = { deathHitboxes: true };
+const HACK_WINDOWS = [
+  { id: 'player', name: 'Player', color: '#e8457c', items: [
+    ['noclip', 'Noclip', 'Spikes and blocks can\'t kill you. Shortcut: I.'],
+    ['ncAcc', 'Noclip Accuracy', 'With noclip on, shows how much of the attempt you spent NOT inside something deadly.'],
+    ['ncDeaths', 'Noclip Deaths', 'With noclip on, counts how many times you would have died (once each time you hit something, not every step).'],
+    ['ncTint', 'Noclip Death Tint', 'With noclip on, the screen goes red while you are inside something deadly.'],
+    ['instantRespawn', 'Instant Respawn', 'Restart straight away after crashing, with no half-second wait.'],
+    { act: 'restart', label: 'Restart Level', desc: 'Start the attempt again (in a run, this starts a new run).' },
+    { act: 'complete', label: 'Instant Complete', desc: 'Jump to the end of the level. Coins are not saved.' },
+  ] },
+  { id: 'speed', name: 'Speedhack', color: '#2f9bff', items: [
+    ['speedhack', 'Enabled', 'Runs the whole game faster or slower. Below 1 is slow motion.'],
+    { input: 'speed', label: 'Speed', desc: 'How fast the game runs: 1 is normal, 0.5 is half speed, 2 is double.' },
+    { presets: [0.25, 0.5, 0.75, 1, 1.5, 2] },
+  ] },
+  { id: 'cosmetic', name: 'Cosmetic', color: '#a45cff', items: [
+    ['hitboxes', 'Show Hitboxes', 'Draws every hitbox while you play. Shortcut: H.'],
+    ['deathHitboxes', 'Hitboxes on Death', 'Draws the hitboxes for a moment when you crash.'],
+    ['layout', 'Show Layout', 'Hides all decoration and shows every object with a hitbox, fully visible in its default colors, on a plain background.'],
+    ['hidePlayer', 'Hide Player', 'The ship is not drawn (it still flies and crashes).'],
+    ['hidePause', 'Hide Pause Button', 'Hides the pause button. Esc still pauses.'],
+  ] },
+  { id: 'status', name: 'Status', color: '#3fd16b', items: [
+    ['cheatIndicator', 'Cheat Indicator', 'A dot in the corner: green while the attempt is legit, red once any hack that changes the game was on.'],
+    ['fps', 'FPS Counter', 'Frames drawn per second.'],
+    ['cps', 'CPS Counter', 'Clicks per second, and how many clicks this attempt.'],
+    ['attempts', 'Attempts', 'The attempt number.'],
+    ['time', 'Level Time', 'Seconds of game time since the attempt started.'],
+    ['position', 'Position', 'Where the ship is, in blocks.'],
+    ['clock', 'Clock', 'The time of day.'],
+  ] },
+  { id: 'universal', name: 'Universal', color: '#ff9d2e', items: [
+    ['safeMode', 'Safe Mode', 'Never saves coins, even with no other hack on.'],
+    { act: 'resetLayout', label: 'Reset Windows', desc: 'Puts the hack windows back in their starting places.' },
+    { act: 'allOff', label: 'Turn Everything Off', desc: 'Turns every hack off (Hitboxes on Death goes back on).' },
+  ] },
+];
+// The hacks that change the game. With one of them on, coins are not saved and runs don't count.
+const GAMEPLAY_HACKS = ['noclip', 'speedhack'];
+const hacks = (() => {
+  const h = { on: { ...HACK_DEFAULTS }, speed: 0.5, pos: {} };
+  try {
+    const d = JSON.parse(localStorage.getItem(HACKS_KEY) || '{}');
+    if (isOpts(d.on)) for (const [k, v] of Object.entries(d.on)) h.on[k] = !!v;
+    if (Number(d.speed) > 0) h.speed = clampSpeed(d.speed);
+    if (isOpts(d.pos)) h.pos = d.pos;
+  } catch (e) { /* storage blocked: defaults */ }
+  return h;
+})();
+function clampSpeed(v) { return Math.round(Math.max(0.05, Math.min(10, Number(v) || 1)) * 100) / 100; }
+function saveHacks() { try { localStorage.setItem(HACKS_KEY, JSON.stringify(hacks)); } catch (e) { /* ignore */ } }
+function hk(id) { return settings.editorMode ? !!hacks.on[id] : !!HACK_DEFAULTS[id]; }
+function hackSpeed() { return hk('speedhack') ? hacks.speed : 1; }
+function cheatsOn() { return GAMEPLAY_HACKS.some(id => id === 'speedhack' ? hackSpeed() !== 1 : hk(id)); }
+function setHack(id, v) {
+  hacks.on[id] = v; saveHacks();
+  if (screen === 'play') updateHud(true);
+  renderHackMenu();
+}
+
+const hackMenuOpen = () => !!$('hackMenu') && !$('hackMenu').hidden;
+function showHackMenu(open = !hackMenuOpen()) {
+  if (open && !settings.editorMode) return;
+  let m = $('hackMenu');
+  if (!m) {
+    if (!open) return;
+    m = document.createElement('div');
+    m.id = 'hackMenu'; m.hidden = true;
+    m.setAttribute('role', 'dialog'); m.setAttribute('aria-label', 'Hack menu');
+    document.body.appendChild(m);
+    hackMenuEvents(m);
+  }
+  m.hidden = !open;
+  if (open) { renderHackMenu(); placeHackWindows(); }
+}
+function hackRowHTML(it) {
+  if (Array.isArray(it)) {
+    const [id, label, desc] = it, on = !!hacks.on[id];
+    return `<button type="button" class="hk-row${on ? ' on' : ''}" data-hack="${id}" title="${esc(desc)}" aria-pressed="${on}"><span>${label}</span><i></i></button>`;
+  }
+  if (it.act) return `<button type="button" class="hk-row hk-act" data-hact="${it.act}" title="${esc(it.desc)}"><span>${it.label}</span></button>`;
+  if (it.input) return `<label class="hk-row hk-in" title="${esc(it.desc)}"><span>${it.label}</span><input type="number" min="0.05" max="10" step="0.05" value="${hacks.speed}" data-hin="${it.input}"><b>x</b></label>`;
+  return `<div class="hk-presets">${it.presets.map(v => `<button type="button" data-hspeed="${v}"${hacks.on.speedhack && v === hacks.speed ? ' class="on"' : ''}>${v}</button>`).join('')}</div>`;
+}
+function renderHackMenu() {
+  const m = $('hackMenu');
+  if (!m || m.hidden) return;
+  const focused = document.activeElement && m.contains(document.activeElement) && document.activeElement.dataset.hin;
+  if (!m.children.length) {
+    m.innerHTML = `<p class="hk-hint">HACK MENU · TAB TO CLOSE · DRAG THE TITLES TO MOVE</p>` + HACK_WINDOWS.map(w =>
+      `<section class="hk-win" data-win="${w.id}" style="--hk:${w.color}"><h2 class="hk-head">${w.name}</h2><div class="hk-body"></div></section>`).join('');
+  }
+  for (const w of HACK_WINDOWS) {
+    const body = m.querySelector(`[data-win="${w.id}"] .hk-body`);
+    if (focused && w.id === 'speed') {      // don't rebuild the box being typed in
+      body.querySelectorAll('[data-hack]').forEach(b => { const on = !!hacks.on[b.dataset.hack]; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
+      continue;
+    }
+    body.innerHTML = w.items.map(hackRowHTML).join('');
+  }
+}
+// Windows start in a row along the top (wrapping on small screens) until you drag them
+function placeHackWindows(reset) {
+  const m = $('hackMenu');
+  if (!m || m.hidden) return;
+  if (reset) { hacks.pos = {}; saveHacks(); }
+  const W = innerWidth, Hh = innerHeight, gap = 8;
+  let x = gap, y = 30, rowH = 0;
+  for (const win of m.querySelectorAll('.hk-win')) {
+    const w = win.offsetWidth, h = win.offsetHeight, p = hacks.pos[win.dataset.win];
+    if (x + w > W - gap && x > gap) { x = gap; y += rowH + gap; rowH = 0; }
+    let px = x, py = y;
+    if (p) { px = p[0]; py = p[1]; }
+    win.style.left = Math.max(0, Math.min(W - w, px)) + 'px';
+    win.style.top = Math.max(0, Math.min(Hh - 24, py)) + 'px';
+    x += w + gap; rowH = Math.max(rowH, h);
+  }
+}
+function hackAction(act) {
+  if (act === 'resetLayout') { placeHackWindows(true); return; }
+  if (act === 'allOff') { hacks.on = { ...HACK_DEFAULTS }; saveHacks(); if (screen === 'play') updateHud(true); renderHackMenu(); toast('All hacks are off.'); return; }
+  if (screen !== 'play' || game.finished) { toast('Start a level first.'); return; }
+  if (act === 'restart') { if (game.paused) hideOverlay(); restart(); }
+  else if (act === 'complete') {
+    if (game.paused) { game.paused = false; hideOverlay(); }
+    game.cheated = true;
+    scrollX = world.endPx - shipCenterX;
+    game.prevScroll = scrollX;
+    onFinish();
+  }
+}
+function hackMenuEvents(m) {
+  // buttons never take the keyboard, so Space keeps flying the ship after a click
+  m.addEventListener('pointerdown', e => { if (e.target.closest('button')) e.preventDefault(); });
+  m.addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.hack) setHack(b.dataset.hack, !hacks.on[b.dataset.hack]);
+    else if (b.dataset.hact) hackAction(b.dataset.hact);
+    else if (b.dataset.hspeed) { hacks.speed = clampSpeed(b.dataset.hspeed); hacks.on.speedhack = true; saveHacks(); renderHackMenu(); }
+  });
+  m.addEventListener('change', e => {
+    if (!e.target.dataset.hin) return;
+    hacks.speed = clampSpeed(e.target.value); e.target.value = hacks.speed; saveHacks();
+    renderHackMenu();
+  });
+  // dragging a window by its title
+  let drag = null;
+  m.addEventListener('pointerdown', e => {
+    const head = e.target.closest('.hk-head');
+    if (!head) return;
+    const win = head.parentElement;
+    e.preventDefault();
+    head.setPointerCapture(e.pointerId);
+    drag = { win, dx: e.clientX - win.offsetLeft, dy: e.clientY - win.offsetTop };
+    m.appendChild(win);                    // the window you grab goes on top
+  });
+  m.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const { win } = drag;
+    const x = Math.max(0, Math.min(innerWidth - win.offsetWidth, e.clientX - drag.dx));
+    const y = Math.max(0, Math.min(innerHeight - 24, e.clientY - drag.dy));
+    win.style.left = x + 'px'; win.style.top = y + 'px';
+  });
+  const drop = () => {
+    if (!drag) return;
+    hacks.pos[drag.win.dataset.win] = [drag.win.offsetLeft, drag.win.offsetTop]; saveHacks();
+    drag = null;
+  };
+  m.addEventListener('pointerup', drop);
+  m.addEventListener('pointercancel', drop);
+}
+window.addEventListener('resize', () => placeHackWindows());
+
+// --- the Status labels (top left while playing) ---
+const fpsMeter = { frames: 0, t0: 0, fps: 0 };
+function countFrame(now) {
+  fpsMeter.frames++;
+  if (now - fpsMeter.t0 >= 500) { fpsMeter.fps = Math.round(fpsMeter.frames * 1000 / (now - fpsMeter.t0)); fpsMeter.frames = 0; fpsMeter.t0 = now; }
+}
+const clickTimes = [];
+function noteClick() {
+  game.clicks++;
+  clickTimes.push(performance.now());
+}
+let statusKey = '';
+function updateStatus(now) {
+  const lines = [];
+  if (hk('cheatIndicator')) lines.push(`<i class="hk-dot${game.cheated || cheatsOn() ? ' red' : ''}"></i>`);
+  if (hk('noclip')) {
+    const nc = game.nc, cls = Me.clipped ? ' class="hit"' : '';
+    if (hk('ncAcc')) lines.push(`<span${cls}>ACCURACY: ${(nc.steps ? 100 * (1 - nc.dead / nc.steps) : 100).toFixed(2)}%</span>`);
+    if (hk('ncDeaths')) lines.push(`<span${cls}>DEATHS: ${nc.deaths}</span>`);
+  }
+  if (hk('fps')) lines.push(`<span>FPS: ${fpsMeter.fps}</span>`);
+  if (hk('cps')) {
+    while (clickTimes.length && now - clickTimes[0] > 1000) clickTimes.shift();
+    lines.push(`<span>CPS: ${clickTimes.length} / ${game.clicks}</span>`);
+  }
+  if (hk('attempts')) lines.push(`<span>ATTEMPT ${game.attempts}</span>`);
+  if (hk('time')) lines.push(`<span>TIME: ${game.time.toFixed(2)}</span>`);
+  if (hk('position')) lines.push(`<span>X: ${((shipCenterX + scrollX) / gridSize).toFixed(1)} Y: ${(Me.y / gridSize).toFixed(1)}</span>`);
+  if (hk('clock')) lines.push(`<span>${new Date().toLocaleTimeString()}</span>`);
+  const key = lines.join('');
+  if (key === statusKey) return;
+  statusKey = key;
+  $('hudLabels').innerHTML = lines.join('');
 }
 
 
@@ -4435,7 +4669,7 @@ function placeToast() {
 
 // --- the Settings menu ---
 const GAME_SETTINGS = [
-  ['editorMode', 'DEV MODE', 'Unlocks the level editor, noclip and hitboxes. Until it is on, they are hidden and cannot be used.'],
+  ['editorMode', 'DEV MODE', 'Unlocks the level editor and the hack menu (Tab): noclip, speedhack, hitboxes and more. Until it is on, they are hidden and cannot be used.'],
   ['showProgress', 'PROGRESS BAR', 'The bar at the top while you play.'],
   ['showPercent', 'PERCENTAGE', 'The number next to the progress bar.'],
   ['showAttempts', 'ATTEMPT COUNTER', 'The "Attempt 3" text at the start of each try.'],
@@ -4476,8 +4710,8 @@ $('modalBody').addEventListener('change', e => {
   settings[c.dataset.set] = c.checked; saveSettings();
   if (c.dataset.set === 'editorMode') {
     $('btnEditor').hidden = !settings.editorMode;
-    if (!settings.editorMode) { noClip = false; game.showHitboxes = false; }
-    toast(settings.editorMode ? 'Dev mode on. The EDITOR button is on the main menu.' : 'Dev mode off. The editor, noclip and hitboxes are hidden.');
+    if (!settings.editorMode) showHackMenu(false);
+    toast(settings.editorMode ? 'Dev mode on. The EDITOR button is on the main menu, and Tab opens the hack menu.' : 'Dev mode off. The editor and the hack menu are hidden, and no hacks are on.');
     requestAnimationFrame(() => fitText());
   }
 });
@@ -4486,8 +4720,9 @@ function showHowToPlay() {
   showModal('HOW TO PLAY', `<dl class="keys-list">
       <dt>SPACE / UP / CLICK</dt><dd>Hold to fly up. Let go to fall.</dd>
       <dt>ESC</dt><dd>Pause.</dd>
-${settings.editorMode ? `      <dt>I</dt><dd>Noclip (Practice and editor tests only).</dd>
-      <dt>H</dt><dd>Show hitboxes (Practice and editor tests only).</dd>
+${settings.editorMode ? `      <dt>TAB</dt><dd>Open or close the hack menu (dev mode).</dd>
+      <dt>I</dt><dd>Noclip on or off.</dd>
+      <dt>H</dt><dd>Show hitboxes on or off.</dd>
 ` : ''}    </dl>
     <p>A run is ${LEVELS_PER_RUN} random levels back to back. Crash once and a new run starts with new levels.</p>`,
     [{ label: 'OK', primary: true, fn: hideModal }]);
@@ -4534,6 +4769,9 @@ $('edScroll').addEventListener('change', e => e.target.blur());
 
 // input for flying (your onKeyPress / onKeyRelease / onMousePress / onMouseRelease)
 window.addEventListener('keydown', e => {
+  if (e.key === 'Tab' && settings.editorMode && !e.ctrlKey && !e.altKey && !e.metaKey) { e.preventDefault(); if (!e.repeat) showHackMenu(); return; }
+  if (isTyping(e) && e.target.closest('#hackMenu')) { if (e.key === 'Escape' || e.key === 'Enter') e.target.blur(); return; }
+  if (e.key === 'Escape' && hackMenuOpen()) { showHackMenu(false); return; }
   if (!$('colorPop').hidden) { if (e.key === 'Escape') { if (!$('cpMenu').hidden) cpMenu(false); else closeColorPop(); } return; }
   if (!$('modal').hidden) { if (e.key === 'Escape') hideModal(); return; }
   if (!$('egPop').hidden) { if (e.key === 'Escape') closeEditGroup(); return; }
@@ -4541,14 +4779,14 @@ window.addEventListener('keydown', e => {
   if (screen === 'play') {
     if (e.code === 'Space' || e.code === 'ArrowUp') {
       e.preventDefault();
-      if (!e.repeat && !game.paused && !game.finished) { upInput = true; pressed = true; }
+      if (!e.repeat && !game.paused && !game.finished) { upInput = true; pressed = true; noteClick(); }
     } else if (e.code === 'Escape') {
       if (game.mode === 'test' || game.finished) leavePlay();
       else if (game.paused) resumeGame();
       else pauseGame();
     }
-    else if (e.code === 'KeyI' && game.mode !== 'run' && settings.editorMode) { noClip = !noClip; updateHud(true); }
-    else if (e.code === 'KeyH' && game.mode !== 'run' && settings.editorMode) game.showHitboxes = !game.showHitboxes;
+    else if (e.code === 'KeyI' && settings.editorMode) setHack('noclip', !hk('noclip'));
+    else if (e.code === 'KeyH' && settings.editorMode) setHack('hitboxes', !hk('hitboxes'));
     return;
   }
   if (screen === 'editor') { edKey(e); return; }
@@ -4561,7 +4799,7 @@ window.addEventListener('keyup', e => {
 $('stage').addEventListener('pointerdown', e => {
   if (e.target.closest('.overlay, .pause-btn')) return;
   if (game.paused || game.finished) return;
-  e.preventDefault(); upInput = true; pressed = true;
+  e.preventDefault(); upInput = true; pressed = true; noteClick();
 });
 window.addEventListener('pointerup', () => { if (screen === 'play') upInput = false; });
 window.addEventListener('pointercancel', () => { upInput = false; });
@@ -4579,13 +4817,15 @@ let lastFrame = performance.now();
 function frame(now) {
   const elapsed = Math.min(0.25, Math.max(0, (now - lastFrame) / 1000));
   lastFrame = now;
+  countFrame(now);
   if (screen === 'play') {
+    const t = elapsed * hackSpeed();     // Speedhack: the game's clock runs faster or slower
     if (!game.finished && !game.paused) {
       if (game.dead) {
-        game.deathTimer -= elapsed;
+        game.deathTimer -= t;
         if (game.deathTimer <= 0) restart();
       } else {
-        game.acc += elapsed;
+        game.acc += t;
         while (game.acc >= dt) {
           step();
           game.acc -= dt;
@@ -4593,7 +4833,7 @@ function frame(now) {
         }
       }
     }
-    if (screen === 'play') drawGame();
+    if (screen === 'play') { drawGame(); updateStatus(now); }
   } else if (screen === 'editor' && ed.needsDraw) { ed.needsDraw = false; drawEditor(); }
   requestAnimationFrame(frame);
 }
