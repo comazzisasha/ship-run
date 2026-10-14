@@ -339,6 +339,14 @@ h1.logo { margin-bottom: 0; font: inherit; }
 .kit-icon:hover { background: rgba(255,255,255,.1); }
 .kit-icon[aria-pressed="true"] { background: rgba(255,255,255,.18); box-shadow: inset 0 0 0 2px rgba(255,255,255,.85); }
 .kit-icon canvas { width: 100%; height: 100%; display: block; }
+.kit-icon.locked canvas { opacity: .3; }
+.kit-icon.locked::after { content: ''; position: absolute; inset: 22% 30%; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M30 46 V34 A20 20 0 0 1 70 34 V46' fill='none' stroke='%23000' stroke-width='22'/%3E%3Cpath d='M30 46 V34 A20 20 0 0 1 70 34 V46' fill='none' stroke='%23d9d9d9' stroke-width='10'/%3E%3Crect x='18' y='44' width='64' height='48' rx='8' fill='%23ffc61f' stroke='%23000' stroke-width='7'/%3E%3C/svg%3E") center / contain no-repeat; pointer-events: none; }
+.rw-list { display: grid; gap: 10px; }
+.rw-row { display: grid; grid-template-columns: 70px minmax(0, 1fr) 90px; gap: 12px; align-items: center; }
+.rw-prev { width: 90px; height: 54px; }
+.path-reward { display: flex; gap: 2px; flex: none; }
+.path-reward canvas { width: 44px; height: 38px; }
+@media (max-width: 520px) { .path-reward { display: none; } }
 .kit-colors { padding: 14px 18px 12px; display: grid; gap: 14px; justify-items: center; }
 .kit-colors[hidden] { display: none; }
 .kit-slots { display: flex; gap: 20px; justify-content: center; align-items: center; }

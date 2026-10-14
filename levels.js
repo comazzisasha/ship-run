@@ -10,6 +10,7 @@ window.LEVELS = [
     "randomizer": true,
     "end": null,
     "colors": {"bg": "#FF00C9", "ground": "#000026"},
+    "reward": {"ship": 3, "cube": 4},
     "objects": [
       ["TelePortal", 17, 2, 5.5],
       ["Block", 18, 1],
@@ -391,6 +392,7 @@ window.LEVELS = [
     "randomizer": true,
     "end": null,
     "colors": {"bg": "#004EFA"},
+    "reward": {"ship": 8, "cube": 10},
     "objects": [
       ["Block", 13, 2],
       ["Block", 13, 1],
@@ -721,6 +723,7 @@ window.LEVELS = [
     "randomizer": true,
     "end": null,
     "colors": {"ground": "#000000", "bg": "#EE00F6"},
+    "reward": {"ship": 13, "cube": 17},
     "objects": [
       ["ShortSpike", 13, 10, 180],
       ["ShortSpike", 14, 10, 180],
@@ -1509,6 +1512,7 @@ window.LEVELS = [
     "randomizer": true,
     "end": null,
     "colors": {"bg": "#150043", "ground": "#000000"},
+    "reward": {"ship": 19, "cube": 23},
     "objects": [
       ["TelePortal", 12, 2, 6],
       ["ThornPit", 16, 1, 0, "pit_04"],
@@ -1856,6 +1860,7 @@ window.LEVELS = [
     "name": "ElectroDynamix 1",
     "randomizer": true,
     "end": null,
+    "reward": {"ship": 25, "cube": 31},
     "objects": [
       ["Block", 13, 4],
       ["Block", 14, 4],
@@ -2245,6 +2250,7 @@ window.LEVELS = [
     "name": "Nightmare ship",
     "randomizer": true,
     "end": null,
+    "reward": {"ship": 30, "cube": 38},
     "objects": [
       ["Block", 15, 1],
       ["Block", 15, 2],
@@ -2447,6 +2453,7 @@ window.LEVELS = [
     "name": "Clubstep Ship 1",
     "randomizer": true,
     "end": null,
+    "reward": {"ship": 35, "cube": 45},
     "objects": [
       ["TelePortal", 10, 2, 6],
       ["GridBlock", 12, 1],
@@ -2788,6 +2795,7 @@ window.LEVELS = [
     "randomizer": true,
     "end": null,
     "colors": {"bg": "#6F0015", "ground": "#000000"},
+    "reward": {"ship": 41, "cube": 52},
     "objects": [
       ["TelePortal", 13, 2, 6],
       ["OutlineBlock", 22, 5, 0, 4],
@@ -2949,6 +2957,7 @@ window.LEVELS = [
     "randomizer": true,
     "end": null,
     "colors": {"bg": "#470000", "ground": "#000000", "line": "#FF1D1D", "obj": "#FA9193"},
+    "reward": {"ship": 47, "cube": 60},
     "objects": [
       ["SizePortal", 13, 2, "mini"],
       ["TelePortal", 15, 2, 6],
@@ -3663,6 +3672,7 @@ window.LEVELS = [
     "randomizer": true,
     "end": null,
     "colors": {"bg": "#6C090B", "ground": "#000000", "line": "#000000"},
+    "reward": {"ship": 51, "cube": 70},
     "objects": [
       ["OutlineBlock", 21, 4, 0, 3],
       ["OutlineBlock", 21, 3, 90, 2],
@@ -4004,6 +4014,7 @@ window.LEVELS = [
     "randomizer": true,
     "end": null,
     "colors": {"bg": "#000000", "ground": "#000000", "line": "#FF1D1D", "obj": "#FF1D1D"},
+    "reward": {"ship": 59, "cube": 99},
     "objects": [
       ["Spike", 10, 2, 180],
       ["Spike", 12, 2, 180],

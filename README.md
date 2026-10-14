@@ -31,6 +31,18 @@ The analytics code is the `track()` helper near the top of section 8 of
 `game.js`, plus the GoatCounter `<script>` tag at the end of `<head>` in
 `index.html`.
 
+## Progression and rewards
+
+PLAY opens the levels in the order of `levels.js` (set it with the ▲/▼ arrows in the
+level editor). Beating a level unlocks the next, and beating them all unlocks the Random Mix.
+Progress is saved in the browser.
+
+Each level can unlock icons: in the level editor, click **REWARD** on a level and type a ship
+and/or cube number from the icon kit. It's saved with the level in `levels.js`, so new levels
+get their own reward the same way. An icon that is a reward is locked in the icon kit until
+it's earned; every other icon is free. The rewards for beating every level and for finishing a
+Random Mix are `BONUS_REWARDS` at the top of `game.js`.
+
 ## Icon kit
 
 The ICONS button on the main menu opens an icon kit for picking your cube, ship

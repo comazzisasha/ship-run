@@ -21,6 +21,13 @@
 
 const GAME_TITLE = 'Ship Run';
 const LEVELS_PER_RUN = 5;      // how many random levels make one run
+// Icons you earn for more than one level. Each level's own reward is part of the level
+// (Level editor > REWARD, saved in levels.js). An icon that is anyone's reward is locked in
+// the icon kit until it's earned; every other icon is free. Leave a part out for no icon.
+const BONUS_REWARDS = {
+  allLevels: { ship: 46, cube: 142 },   // for beating every level
+  mix: { ship: 79, cube: 248 },          // for finishing a Random Mix
+};
 const VIEW_WIDTH = 640;        // width of the game view in pixels (CMU was 400). Height is always 400.
 const SHIP_SCREEN_X = Math.round(VIEW_WIDTH / 3);   // where the middle of the ship is drawn, in pixels from the left edge
 
@@ -1810,10 +1817,11 @@ function trackLevelDone(pi) {
 // before it is beaten (or it was beaten itself). Beating all of them unlocks the random mix.
 const PROGRESS_KEY = 'shiprun.progress.v1';
 const progress = (() => {
-  const p = { beaten: {}, best: {}, practice: {} };
+  const p = { beaten: {}, best: {}, practice: {}, mixDone: false };
   try {
     const d = JSON.parse(localStorage.getItem(PROGRESS_KEY) || '{}');
     if (isOpts(d.beaten)) for (const k in d.beaten) if (d.beaten[k]) p.beaten[k] = true;
+    p.mixDone = !!d.mixDone;
     for (const m of ['best', 'practice']) if (isOpts(d[m])) for (const k in d[m]) { const v = Math.floor(Number(d[m][k])); if (v > 0) p[m][k] = Math.min(100, v); }
   } catch (e) { /* storage blocked: nothing beaten */ }
   return p;
@@ -1837,6 +1845,24 @@ function noteBest(pct) {
   map[id] = pct; saveProgress();
   return true;
 }
+// --- icon rewards ---
+// Every reward: what it's for, the icon, and whether it's been earned
+function iconRewards() {
+  const out = [], add = (r, why, earned) => { if (r) for (const form of ['ship', 'cube']) if (r[form]) out.push({ form, id: r[form], why, earned }); };
+  for (const L of pathLevels()) add(L.reward, 'Beat ' + L.name, levelBeaten(L));
+  add(BONUS_REWARDS.allLevels, 'Beat every level', pathLevels().length > 0 && pathLevels().every(levelBeaten));
+  add(BONUS_REWARDS.mix, 'Finish a Random Mix', progress.mixDone);
+  return out;
+}
+// null when the icon can be picked, otherwise how to unlock it ("Beat Cycles Ship")
+function iconLock(form, id) {
+  if (hk('unlockIcons')) return null;
+  const rs = iconRewards().filter(r => r.form === form && r.id === id);
+  return !rs.length || rs.some(r => r.earned) ? null : rs.map(r => r.why).join(' or ');
+}
+const earnedIcons = () => new Set(iconRewards().filter(r => r.earned).map(r => r.form + r.id));
+function newIconsSince(before) { return iconRewards().filter(r => r.earned && !before.has(r.form + r.id)).filter((r, i, a) => a.findIndex(x => x.form === r.form && x.id === r.id) === i); }
+
 // Marks the level beaten. Returns what it unlocked: { next, mix }
 function noteBeaten() {
   const out = { next: null, mix: false };
@@ -1876,7 +1902,7 @@ const game = {
   prevScroll: 0, prevY: position, prevTheta: 0, trail: [], lastTrail: null,
   cssScale: 1, dpr: 1, hudKey: '', attemptX: 0,
   time: 0, coinPart: 0, cheated: false, runCoins: 0, stage: null, unlocked: null, newBest: false,
-  practice: false, checkpoints: [], cpNext: 0, cpPending: null,
+  practice: false, checkpoints: [], cpNext: 0, cpPending: null, newIcons: [],
   nc: { steps: 0, dead: 0, deaths: 0, was: false }, clicks: 0,
 };
 const gameCanvas = $('game'), gameCtx = gameCanvas.getContext('2d');
@@ -2071,8 +2097,11 @@ function onFinish() {
   game.finished = true;
   releaseInput();
   while (game.coinPart < world.parts.length) { trackLevelDone(game.coinPart); keepCoins(game.coinPart++); }
+  const iconsBefore = earnedIcons();
   game.newBest = noteBest(100);
   game.unlocked = noteBeaten();
+  if (game.mode === 'run' && !game.cheated && !hk('safeMode') && !progress.mixDone) { progress.mixDone = true; saveProgress(); }
+  game.newIcons = hk('unlockIcons') ? [] : newIconsSince(iconsBefore);
   if (game.unlocked.mix) track('mix-unlocked');
   if (game.mode === 'test') {
     game.lastTrail = { pts: game.trail, died: false };
@@ -2163,6 +2192,8 @@ function unlockLines() {
   let out = '';
   if (u.next) out += `<span class="done-line o gold">NEW LEVEL UNLOCKED: ${esc(u.next.name)}</span>`;
   if (u.mix) out += `<span class="done-line o gold">RANDOM MIX UNLOCKED!</span>`;
+  const got = game.newIcons || [], n = f => got.filter(r => r.form === f).length;
+  if (got.length) out += `<span class="done-line o gold">NEW ${['ship', 'cube'].filter(n).map(f => n(f) > 1 ? n(f) + ' ' + f.toUpperCase() + 'S' : f.toUpperCase()).join(' AND ')} UNLOCKED!</span>`;
   if (game.practice && !levelBeaten(game.level)) out += '<span class="done-line o small">NOW BEAT IT IN NORMAL MODE TO UNLOCK THE NEXT LEVEL</span>';
   if (!out && game.mode === 'level' && game.returnTo === 'path' && (game.cheated || hk('safeMode'))) out = '<span class="done-line o small">HACKS WERE ON, SO THIS DOESN\'T COUNT</span>';
   return out;
@@ -2324,6 +2355,7 @@ const HACK_DEFAULTS = { deathHitboxes: true };
 const HACK_WINDOWS = [
   { id: 'dev', name: 'Dev', color: '#e0a800', items: [
     { act: 'editor', label: 'Level Editor', desc: 'Make levels, and set the order they are played in.' },
+    ['unlockIcons', 'Unlock All Icons', 'Every icon in the icon kit can be picked. Your real unlocks are kept.'],
     ['unlockLevels', 'Unlock All Levels', 'Every level and the random mix can be played, without beating the ones before. Your real progress is kept.'],
     { act: 'lockDev', label: 'Lock Dev Mode', desc: 'Turns dev mode off in this browser. The key on the main menu unlocks it again.' },
   ] },
@@ -2385,6 +2417,7 @@ function setHack(id, v) {
   if (screen === 'play') updateHud(true);
   if (screen === 'menu') renderMenuNote();
   if (screen === 'path') renderPath();
+  if (screen === 'icons') renderKit();
   renderHackMenu();
 }
 
@@ -2551,7 +2584,7 @@ let usingLocal = false;
 let levels = loadLevels();
 
 function canon(list) {
-  return list.map(L => ({ id: L.id, name: L.name, randomizer: !!L.randomizer, end: L.end > 0 ? L.end : null,
+  return list.map(L => ({ id: L.id, name: L.name, randomizer: !!L.randomizer, end: L.end > 0 ? L.end : null, reward: cleanReward(L.reward),
     colors: (c => Object.keys(c).length ? c : null)(cleanColors(L.colors)), objects: L.objects }));
 }
 // A level's own colors: {"bg": "#287DFF", "obj": "#FFFFFF", "1": {"rgb": "#FF0000", "opacity": 0.5}}
@@ -2575,8 +2608,16 @@ function cleanLevel(L, i) {
     randomizer: !!L.randomizer,
     end: L.end > 0 ? Math.round(L.end) : null,
     colors: cleanColors(L.colors),
+    reward: cleanReward(L.reward),
     objects,
   };
+}
+// A level's reward: {"ship": 5, "cube": 12}, either part optional. null = no reward.
+function cleanReward(r) {
+  if (!isOpts(r)) return null;
+  const out = {};
+  for (const form of ['ship', 'cube']) { const id = intIn(r[form], 0, ICON_FORMS[form].max, 0); if (id > 0) out[form] = id; }
+  return Object.keys(out).length ? out : null;
 }
 function newId() { return 'lvl_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 
@@ -2645,6 +2686,7 @@ function levelsFileText(list) {
     out.push('    "randomizer": ' + JSON.stringify(!!L.randomizer) + ',');
     out.push('    "end": ' + JSON.stringify(L.end > 0 ? L.end : null) + ',');
     if (L.colors && Object.keys(L.colors).length) out.push('    "colors": ' + JSON.stringify(L.colors).replace(/,/g, ', ').replace(/":/g, '": ') + ',');
+    if (L.reward) out.push('    "reward": ' + JSON.stringify(L.reward).replace(/,/g, ', ').replace(/":/g, '": ') + ',');
     out.push('    "objects": [');
     L.objects.forEach((o, j) => out.push('      ' + JSON.stringify(o).replace(/,/g, ', ').replace(/":/g, '": ') + (j < L.objects.length - 1 ? ',' : '')));
     out.push('    ]');
@@ -2656,7 +2698,8 @@ function levelsFileText(list) {
 
 function levelCodeText(L) {
   const c = L.colors && Object.keys(L.colors).length ? { colors: L.colors } : {};
-  return JSON.stringify({ id: L.id, name: L.name, randomizer: !!L.randomizer, end: L.end > 0 ? L.end : null, ...c, objects: L.objects });
+  const r = L.reward ? { reward: L.reward } : {};
+  return JSON.stringify({ id: L.id, name: L.name, randomizer: !!L.randomizer, end: L.end > 0 ? L.end : null, ...c, ...r, objects: L.objects });
 }
 
 // Reads a levels.js file, a list of levels, or one level's code
@@ -4920,7 +4963,7 @@ function levelMeta(L) {
   const coins = L.objects.filter(d => d[0] === 'Coin');
   const got = coins.filter(d => coinSaved(L.id, getArg(d, 1) + ',' + getArg(d, 2))).length;
   const dots = coins.length ? ` · COINS ${coins.map((d, i) => `<i class="coin-dot${i < got ? ' got' : ''}"></i>`).join('')}` : '';
-  return `${L.objects.length} OBJECTS · ${cols} COLUMNS · ${(cols / speed_lookup.normal).toFixed(1)} S${dots}`;
+  return `${L.objects.length} OBJECTS · ${cols} COLUMNS · ${(cols / speed_lookup.normal).toFixed(1)} S${dots}${L.reward ? ' · REWARD: ' + rewardText(L.reward) : ''}`;
 }
 
 // The level path: every level in order, with your best % on each
@@ -4938,12 +4981,24 @@ function renderPath() {
     return `<div class="gd-row path-row${open ? '' : ' locked'}${won ? ' beaten' : ''}">
       <span class="path-num" aria-hidden="true">${i + 1}</span>
       <div class="gd-row-main"><span class="gd-row-name">${esc(L.name)}${check}</span>${info}</div>
+      ${L.reward ? `<div class="path-reward" title="Beat it to unlock ${rewardText(L.reward).toLowerCase()}">${['ship', 'cube'].filter(f => L.reward[f]).map(f =>
+        `<canvas data-rform="${f}" data-rid="${L.reward[f]}" data-won="${won ? 1 : ''}" aria-label="Reward: ${f} ${L.reward[f]}"></canvas>`).join('')}</div>` : ''}
       <div class="gd-row-actions">${open
         ? `<button class="gd-btn" data-play="${esc(L.id)}" aria-label="Play ${esc(L.name)}">PLAY</button>
            <button class="gd-btn blue small" data-practice="${esc(L.id)}" aria-label="Practice ${esc(L.name)}">PRACTICE</button>`
         : '<svg class="path-lock" role="img" aria-label="Locked"><use href="#i-lock"/></svg>'}</div>
     </div>`;
   }).join('');
+  drawPathRewards(); setTimeout(drawPathRewards, 600);   // again once the icon pictures have loaded
+}
+// Each level's reward icons: gray until earned, then in your colors
+function drawPathRewards() {
+  if (screen !== 'path') return;
+  $('pathList').querySelectorAll('[data-rform]').forEach(c => {
+    const form = c.dataset.rform, [W, H] = sizeCanvasToBox(c);
+    const look = c.dataset.won ? { ...kit, [form]: Number(c.dataset.rid) } : { ...KIT_GRID_LOOK, [form]: Number(c.dataset.rid) };
+    drawKitIcon(c.getContext('2d'), form, W / 2, H / 2, Math.min(H * 0.7, W * (form === 'ship' ? 0.5 : 0.7)), look);
+  });
 }
 $('pathList').addEventListener('click', e => {
   const b = e.target.closest('[data-play], [data-practice]'); if (!b) return;
@@ -4971,6 +5026,7 @@ function renderLevelList() {
       <div class="gd-row-actions">
         <button class="gd-btn" data-act="edit">EDIT</button>
         <button class="gd-btn blue" data-act="play">PLAY</button>
+        <button class="gd-btn gray small" data-act="reward">REWARD</button>
         <button class="gd-btn gray small" data-act="code">CODE</button>
         <button class="gd-btn gray small" data-act="dup">COPY</button>
         <button class="gd-btn red small" data-act="del">DELETE</button>
@@ -4989,6 +5045,7 @@ $('levelList').addEventListener('click', e => {
   const act = b.dataset.act;
   if (act === 'edit') edOpen(L);
   else if (act === 'play') startPlay('level', { level: L, returnTo: 'levels' });
+  else if (act === 'reward') showRewardModal(L);
   else if (act === 'code') showTextModal('LEVEL CODE', `Anyone can add "${L.name}" to their editor with Paste level code.`, levelCodeText(L), false);
   else if (act === 'dup') { const c = clone(L); c.id = newId(); c.name = L.name + ' copy'; levels.splice(i + 1, 0, c); saveLevels(); renderLevelList(); }
   else if (act === 'up' || act === 'down') moveLevel(i, act === 'up' ? -1 : 1);
@@ -5161,7 +5218,13 @@ function renderKitGrid() {
     }, { root: grid, rootMargin: '120px' });
     grid.querySelectorAll('.kit-icon').forEach(b => kitUI.observer.observe(b));
   } else for (const b of kitUI.seen) drawKitTileArt(b);
-  grid.querySelectorAll('.kit-icon').forEach(b => b.setAttribute('aria-pressed', Number(b.dataset.icon) === kit[form]));
+  grid.querySelectorAll('.kit-icon').forEach(b => {
+    const id = Number(b.dataset.icon), lock = iconLock(form, id), kind = form === 'cube' ? 'Cube' : 'Ship';
+    b.setAttribute('aria-pressed', id === kit[form]);
+    b.classList.toggle('locked', !!lock);
+    b.title = lock ? `${kind} ${id}: ${lock} to unlock it` : `${kind} ${id}`;
+    b.setAttribute('aria-label', lock ? `${kind} ${id}, locked: ${lock}` : `${kind} ${id}`);
+  });
 }
 function renderKitColors() {
   const box = $('kitColors');
@@ -5232,7 +5295,8 @@ function kitRandom() {
   for (const form of ['cube', 'ship']) {
     const n = kitCount(form);
     let id = 1, tries = 0;
-    do id = 1 + Math.floor(Math.random() * n); while (iconMissing(form, id) && ++tries < 20);
+    do id = 1 + Math.floor(Math.random() * n); while ((iconMissing(form, id) || iconLock(form, id)) && ++tries < 40);
+    if (iconLock(form, id)) id = 1;
     kit[form] = id;
   }
   kit.col1 = Math.floor(Math.random() * PLAYER_COLORS.length);
@@ -5270,7 +5334,13 @@ function kitDownload() {
 document.querySelectorAll('[data-kit-tab]').forEach(b => b.addEventListener('click', () => { kitUI.tab = b.dataset.kitTab; kitUI.colors = false; renderKit(); }));
 document.querySelectorAll('[data-kit-slot]').forEach(b => b.addEventListener('click', () => { kitUI.slot = b.dataset.kitSlot; renderKit(); }));
 $('kitPaletteBtn').addEventListener('click', () => { kitUI.colors = !kitUI.colors; renderKit(); });
-$('kitGrid').addEventListener('click', e => { const b = e.target.closest('[data-icon]'); if (b) { kit[kitUI.tab] = Number(b.dataset.icon); kitChanged(); } });
+// A locked icon can't be picked (one you already wear stays on)
+$('kitGrid').addEventListener('click', e => {
+  const b = e.target.closest('[data-icon]'); if (!b) return;
+  const id = Number(b.dataset.icon), lock = iconLock(kitUI.tab, id);
+  if (lock) { toast(`${lock} to unlock this ${kitUI.tab}.`); return; }
+  kit[kitUI.tab] = id; kitChanged();
+});
 function kitPickColor(slot, i) {
   kit[slot] = i;
   if (slot === 'glowCol') kit.glow = true;      // picking a glow color turns the glow on
@@ -5338,6 +5408,34 @@ function lockDevMode() {
   else if (screen === 'play') { updateHud(true); if (game.paused) showPauseMenu(); }
   toast('Dev mode is locked. The editor and the dev menu are hidden, and no hacks are on.');
 }
+// The icons a level gives when it's beaten (blank or 0 = none)
+function showRewardModal(L) {
+  const r = L.reward || {};
+  const row = (form, label) => `<label class="rw-row"><span class="set-name">${label}</span>
+      <input class="gd-input" type="number" min="0" max="${ICON_FORMS[form].max}" step="1" data-rw="${form}" value="${r[form] || ''}" placeholder="NONE">
+      <canvas class="rw-prev" data-rwprev="${form}"></canvas></label>`;
+  showModal('REWARD', `<p>The icons <b>${esc(L.name)}</b> unlocks when it's beaten. Until then they are locked in the icon kit.
+      Type an icon number from the icon kit, or leave it blank for none.</p>
+    <div class="rw-list">${row('ship', 'SHIP')}${row('cube', 'CUBE')}</div>
+    <p class="small">Saved with the level: download levels.js to put it on your website.</p>`, [
+    { label: 'SAVE', primary: true, fn: () => {
+      const v = {};
+      $('modalBody').querySelectorAll('[data-rw]').forEach(i => { v[i.dataset.rw] = Number(i.value) || 0; });
+      L.reward = cleanReward(v); saveLevels(); hideModal(); renderLevelList();
+      toast(L.reward ? `${L.name} now unlocks ${rewardText(L.reward).toLowerCase()}.` : `${L.name} has no reward now.`);
+    } },
+    { label: 'CANCEL', fn: hideModal },
+  ], 'reward');
+  const draw = () => $('modalBody').querySelectorAll('[data-rwprev]').forEach(c => {
+    const form = c.dataset.rwprev, id = Number($('modalBody').querySelector(`[data-rw="${form}"]`).value) || 0;
+    const [W, H] = sizeCanvasToBox(c);
+    if (id > 0 && id <= ICON_FORMS[form].max) drawKitIcon(c.getContext('2d'), form, W / 2, H / 2, H * 0.62, { ...KIT_GRID_LOOK, [form]: id });
+  });
+  $('modalBody').querySelectorAll('[data-rw]').forEach(i => i.addEventListener('input', draw));
+  requestAnimationFrame(draw); setTimeout(draw, 600);    // again once the icon pictures have loaded
+}
+const rewardText = r => ['ship', 'cube'].filter(f => r[f]).map(f => `${f.toUpperCase()} ${r[f]}`).join(' + ');
+
 // The order of the levels list is the order the levels are played in
 function moveLevel(i, by) {
   const j = i + by;
