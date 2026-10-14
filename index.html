@@ -122,7 +122,7 @@
       "name": "Does it have practice mode and a level editor?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Yes. Practice lets you replay any level on its own, and the level editor (turn on Dev Mode in Settings) has editor layers, Edit Group, Edit Object, color triggers and testing."
+        "text": "Yes. Practice lets you replay any level on its own, and the level editor (in dev mode) has editor layers, Edit Group, Edit Object, color triggers and testing."
       }
     }
   ]
@@ -227,6 +227,11 @@ h1, h2, h3, p { margin: 0; }
 .corner.br { bottom: 0; right: 0; transform: scale(-1, -1); }
 .menu-corner-right { position: absolute; top: 18px; right: clamp(16px, 3vw, 40px); z-index: 2; display: flex; gap: 18px; }
 .menu-corner-right .round { --r: 74px; }
+/* the dungeon key (bottom left of the menu): opens the dungeon, where dev mode is unlocked */
+.dungeon-key { position: fixed; left: 14px; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); z-index: 3; width: 46px; height: 46px; padding: 4px; border: 0; background: none; cursor: pointer; opacity: .85; transition: transform .14s cubic-bezier(.3,1.7,.5,1); }
+.dungeon-key:hover { opacity: 1; filter: brightness(1.1); }
+.dungeon-key:active { transform: scale(1.15); }
+.dungeon-key svg { width: 100%; height: 100%; overflow: visible; filter: drop-shadow(2px 3px 0 rgba(0, 12, 45, .45)); }
 #btnPlay .tile-icon { animation: playPulse 1.6s ease-in-out infinite; transform-origin: 50% 50%; }
 @keyframes playPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.08); } }
 .tile.blue-face .tile-face { background:
@@ -366,6 +371,19 @@ h1.logo { margin-bottom: 0; font: inherit; }
   .kit-color { width: 26px; height: 26px; }
   .kit-info { grid-template-columns: auto; }
 }
+
+/* ---------- the dungeon (dev mode unlock) ---------- */
+#scr-dungeon { overflow: auto; background: radial-gradient(ellipse at 50% 35%, #2b2433 0%, #15111b 55%, #060509 100%); }
+#scr-dungeon .page-body { max-width: 560px; justify-items: center; padding-top: clamp(24px, 8vh, 80px); text-align: center; }
+.dg-question { font-family: var(--f-gd); font-size: clamp(26px, 6vw, 44px); line-height: 1.2; color: #e9dcff; --ow: 2.4px; }
+.dg-form { display: flex; gap: 10px; width: 100%; }
+.dg-form .gd-input { flex: 1; font-size: 18px; text-align: center; background: rgba(0, 0, 0, .55); border-color: #6b5a80; }
+.dg-msg { min-height: 1.4em; font: 17px/1.4 var(--f-text); color: #c8b8dd; }
+.dg-msg.bad { color: #ff7a7a; }
+.dg-msg.good { color: #8dff6a; }
+.dg-form.shake { animation: dgShake .4s; }
+@keyframes dgShake { 0%, 100% { transform: none; } 20%, 60% { transform: translateX(-10px); } 40%, 80% { transform: translateX(10px); } }
+@media (prefers-reduced-motion: reduce) { .dg-form.shake { animation: none; } }
 
 /* ---------- pages ---------- */
 .page { overflow: auto; }
@@ -1245,6 +1263,14 @@ body .toast.over.under { top: auto; bottom: calc(10px + env(safe-area-inset-bott
     <path d="M28 28 L72 72 M72 28 L28 72" stroke="#000" stroke-width="22" stroke-linecap="round"/>
     <path d="M28 28 L72 72 M72 28 L28 72" stroke="#fff" stroke-width="10" stroke-linecap="round"/>
   </symbol>
+  <symbol id="i-key" viewBox="0 0 100 100">
+    <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="30" cy="30" r="17" stroke="#000" stroke-width="20"/>
+      <path d="M42 42 L84 84 M64 64 L74 54 M76 76 L86 66" stroke="#000" stroke-width="20"/>
+      <circle cx="30" cy="30" r="17" stroke="url(#g-gold)" stroke-width="10"/>
+      <path d="M42 42 L84 84 M64 64 L74 54 M76 76 L86 66" stroke="url(#g-gold)" stroke-width="10"/>
+    </g>
+  </symbol>
   <symbol id="i-corner" viewBox="0 0 140 140">
     <path d="M-6 -6 H126 V18 H96 V34 H56 V56 H34 V96 H18 V126 H-6 Z" transform="translate(7 8)" fill="#001640" opacity=".45"/>
     <path d="M-6 -6 H126 V18 H96 V34 H56 V56 H34 V96 H18 V126 H-6 Z" fill="#fff" stroke="#fff" stroke-width="10" stroke-linejoin="round"/>
@@ -1293,10 +1319,8 @@ body .toast.over.under { top: auto; bottom: calc(10px + env(safe-area-inset-bott
       <button class="tile blue-face" id="btnPractice" aria-label="Practice one level">
         <span class="tile-face"><svg class="tile-icon" aria-hidden="true"><use href="#i-practice"/></svg><span class="tile-label" data-fit>PRACTICE</span></span>
       </button>
-      <button class="tile orange-face" id="btnEditor" aria-label="Level editor" hidden>
-        <span class="tile-face"><svg class="tile-icon" aria-hidden="true"><use href="#i-tools"/></svg><span class="tile-label" data-fit>EDITOR</span></span>
-      </button>
     </div>
+    <button class="dungeon-key" id="btnKey" aria-label="A key" title="A key"><svg aria-hidden="true"><use href="#i-key"/></svg></button>
     <footer class="menu-foot">
       <p id="menuNote"></p>
       <p class="keys">Hold Space, Up, the mouse button or your finger to fly. Esc pauses.</p>
@@ -1328,7 +1352,7 @@ body .toast.over.under { top: auto; bottom: calc(10px + env(safe-area-inset-bott
           <dt>Do I need to download anything?</dt><dd>No. Ship Run is an HTML5 browser game, so there is no download, install, extension or login. It works in Chrome, Edge, Firefox and Safari.</dd>
           <dt>Can I play on a Chromebook, PC, Mac or phone?</dt><dd>Yes. Ship Run runs in the browser on Chromebooks, Windows PCs, Macs, iPhones, iPads and Android phones and tablets.</dd>
           <dt>Is Ship Run Geometry Dash unblocked?</dt><dd>Ship Run runs straight from ship-run.world with no download or extension, so you can play wherever that site opens. Whether a school or work network allows it depends on that network's rules.</dd>
-          <dt>Does it have practice mode and a level editor?</dt><dd>Yes. Practice lets you replay any level on its own, and the level editor (turn on Dev Mode in Settings) has editor layers, Edit Group, Edit Object, color triggers and testing.</dd>
+          <dt>Does it have practice mode and a level editor?</dt><dd>Yes. Practice lets you replay any level on its own, and the level editor (in dev mode) has editor layers, Edit Group, Edit Object, color triggers and testing.</dd>
         </dl>
         <p>New to it? Read <a href="how-to-play.html">how to play Ship Run: Geometry Dash ship mode controls, portals, practice mode and the level editor</a>.</p>
         <p><a href="privacy.html">Privacy Policy</a> · <a href="terms.html">Terms of Use</a></p>
@@ -1381,6 +1405,20 @@ body .toast.over.under { top: auto; bottom: calc(10px + env(safe-area-inset-bott
     </div>
     <p class="kit-credit">Icon kit based on <a href="https://gdbrowser.com/iconkit/" target="_blank" rel="noopener">GDBrowser's Online Icon Kit</a>
       by GD Colon. The icons and colors are from Geometry Dash and belong to RobTop Games.</p>
+  </section>
+
+  <section id="scr-dungeon" class="screen page" hidden>
+    <header class="gd-head">
+      <button class="back-btn" data-go="menu" aria-label="Back to menu"><svg><use href="#i-back"/></svg></button>
+    </header>
+    <div class="page-body">
+      <h2 class="dg-question o" id="dgQuestion">WHAT IS YOUR NAME?</h2>
+      <form class="dg-form" id="dgForm" autocomplete="off">
+        <input class="gd-input" id="dgName" type="text" maxlength="40" spellcheck="false" autocapitalize="off" autocorrect="off" aria-labelledby="dgQuestion">
+        <button class="gd-btn" type="submit">ENTER</button>
+      </form>
+      <p class="dg-msg" id="dgMsg" role="status"></p>
+    </div>
   </section>
 
   <section id="scr-practice" class="screen page" hidden>

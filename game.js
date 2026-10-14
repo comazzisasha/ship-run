@@ -2001,6 +2001,7 @@ function showPauseMenu() {
         ${roundBtn('resume', 'green', 'i-tri', 'RESUME')}
         ${roundBtn('restart', 'green', 'i-restart', game.mode === 'run' ? 'NEW RUN' : 'RESTART')}
         ${roundBtn('quit', 'green', 'i-menu', game.mode === 'run' ? 'MENU' : 'BACK')}
+        ${settings.editorMode ? roundBtn('dev', 'blue', 'i-key', 'DEV') : ''}
       </div>
     </div>`);
 }
@@ -2032,6 +2033,7 @@ $('overlay').addEventListener('click', e => {
   else if (act === 'restart') restart();
   else if (act === 'again') { if (game.mode === 'run') startRun(); else { game.attempts = 0; restart(); } }
   else if (act === 'quit') leavePlay();
+  else if (act === 'dev') showHackMenu(true);
 });
 
 function fitGameCanvas() {
@@ -2146,13 +2148,18 @@ function applyHudSettings() {
 }
 
 
-// --- the hack menu (dev mode only): Tab opens it, Tab again closes it ---
+// --- the dev menu (dev mode only): Tab opens it, Tab again closes it ---
+// Also opened by the key on the main menu or DEV on the pause menu, once dev mode is on.
 // Like Mega Hack: a few windows of switches you can drag around. Everything is
 // kept in this browser. With dev mode off no hack does anything (Hitboxes on
 // Death keeps its normal "on"), and the menu can't be opened.
 const HACKS_KEY = 'shiprun.hacks.v1';
 const HACK_DEFAULTS = { deathHitboxes: true };
 const HACK_WINDOWS = [
+  { id: 'dev', name: 'Dev', color: '#e0a800', items: [
+    { act: 'editor', label: 'Level Editor', desc: 'Make levels, and set the order they are played in.' },
+    { act: 'lockDev', label: 'Lock Dev Mode', desc: 'Turns dev mode off in this browser. The key on the main menu unlocks it again.' },
+  ] },
   { id: 'player', name: 'Player', color: '#e8457c', items: [
     ['noclip', 'Noclip', 'Spikes and blocks can\'t kill you. Shortcut: I.'],
     ['ncAcc', 'Noclip Accuracy', 'With noclip on, shows how much of the attempt you spent NOT inside something deadly.'],
@@ -2220,7 +2227,7 @@ function showHackMenu(open = !hackMenuOpen()) {
     if (!open) return;
     m = document.createElement('div');
     m.id = 'hackMenu'; m.hidden = true;
-    m.setAttribute('role', 'dialog'); m.setAttribute('aria-label', 'Hack menu');
+    m.setAttribute('role', 'dialog'); m.setAttribute('aria-label', 'Dev menu');
     document.body.appendChild(m);
     hackMenuEvents(m);
   }
@@ -2241,7 +2248,7 @@ function renderHackMenu() {
   if (!m || m.hidden) return;
   const focused = document.activeElement && m.contains(document.activeElement) && document.activeElement.dataset.hin;
   if (!m.children.length) {
-    m.innerHTML = `<p class="hk-hint">HACK MENU · TAB TO CLOSE · DRAG THE TITLES TO MOVE</p>` + HACK_WINDOWS.map(w =>
+    m.innerHTML = `<p class="hk-hint">DEV MENU · TAB OR ESC TO CLOSE · DRAG THE TITLES TO MOVE</p>` + HACK_WINDOWS.map(w =>
       `<section class="hk-win" data-win="${w.id}" style="--hk:${w.color}"><h2 class="hk-head">${w.name}</h2><div class="hk-body"></div></section>`).join('');
   }
   for (const w of HACK_WINDOWS) {
@@ -2272,6 +2279,8 @@ function placeHackWindows(reset) {
 }
 function hackAction(act) {
   if (act === 'resetLayout') { placeHackWindows(true); return; }
+  if (act === 'editor') { openEditorFromDevMenu(); return; }
+  if (act === 'lockDev') { lockDevMode(); return; }
   if (act === 'allOff') { hacks.on = { ...HACK_DEFAULTS }; saveHacks(); if (screen === 'play') updateHud(true); renderHackMenu(); toast('All hacks are off.'); return; }
   if (screen !== 'play' || game.finished) { toast('Start a level first.'); return; }
   if (act === 'restart') { if (game.paused) hideOverlay(); restart(); }
@@ -2429,7 +2438,7 @@ function saveLevelsSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(save
 
 // --- settings (the Settings button on the menu, plus the editor's own options) ---
 // Kept in this browser only. Dev mode (editorMode) starts off, so visitors to your
-// website only see Play and Practice until they turn it on themselves.
+// website only see Play and Practice until they unlock it in the dungeon.
 const SETTINGS_KEY = 'shiprun.settings.v1';
 const SETTING_DEFAULTS = {
   editorMode: false, showProgress: true, showPercent: true, showAttempts: true, showLevelName: true, lowDetail: false,
@@ -4683,7 +4692,8 @@ function showScreen(name) {
   document.querySelectorAll('.screen').forEach(s => { s.hidden = s.id !== 'scr-' + name; });
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
   releaseInput();
-  if (name === 'menu') { renderMenuNote(); $('btnEditor').hidden = !settings.editorMode; requestAnimationFrame(renderKitTile); }
+  if (name === 'menu') { renderMenuNote(); requestAnimationFrame(renderKitTile); }
+  if (name === 'dungeon') openDungeon();
   if (name === 'icons') requestAnimationFrame(openKit);
   if (name === 'play') requestAnimationFrame(fitGameCanvas);
   if (name === 'practice') renderPractice();
@@ -4775,6 +4785,8 @@ function renderLevelList() {
         <button class="gd-btn gray small" data-act="code">CODE</button>
         <button class="gd-btn gray small" data-act="dup">COPY</button>
         <button class="gd-btn red small" data-act="del">DELETE</button>
+        <button class="gd-btn gray small" data-act="up" aria-label="Move ${esc(L.name)} earlier"${i ? '' : ' disabled'}>▲</button>
+        <button class="gd-btn gray small" data-act="down" aria-label="Move ${esc(L.name)} later"${i < levels.length - 1 ? '' : ' disabled'}>▼</button>
       </div>
     </div>`).join('');
 }
@@ -4790,6 +4802,7 @@ $('levelList').addEventListener('click', e => {
   else if (act === 'play') startPlay('practice', { level: L, returnTo: 'levels' });
   else if (act === 'code') showTextModal('LEVEL CODE', `Anyone can add "${L.name}" to their editor with Paste level code.`, levelCodeText(L), false);
   else if (act === 'dup') { const c = clone(L); c.id = newId(); c.name = L.name + ' copy'; levels.splice(i + 1, 0, c); saveLevels(); renderLevelList(); }
+  else if (act === 'up' || act === 'down') moveLevel(i, act === 'up' ? -1 : 1);
   else if (act === 'del') armConfirm(b, 'SURE?', () => { levels.splice(i, 1); saveLevels(); renderLevelList(); toast('Deleted ' + L.name + '.'); });
 });
 
@@ -5083,9 +5096,71 @@ $('kitDownload').addEventListener('click', kitDownload);
 $('btnIcons').addEventListener('click', () => showScreen('icons'));
 
 
+// --- the dungeon: the key on the main menu leads here, and the right name unlocks dev mode ---
+// The names are kept as hashes so they aren't sitting in the code as plain text.
+// This only keeps out casual players: the game runs in the browser, so it isn't real security.
+const DUNGEON_NAMES = new Set(['14o26wavpgh', '1d4fhaumlbc', 'sfzytgm1y4', '15wzw3ousxo', 'iq519v7goq', '1conatbe33v', '2b9hwu5lbfn', '11oatc6r82k']);
+function nameHash(str, seed = 0x5d1) {        // cyrb53
+  let h1 = 0xdeadbeef ^ seed, h2 = 0x41c6ce57 ^ seed;
+  for (let i = 0, ch; i < str.length; i++) { ch = str.charCodeAt(i); h1 = Math.imul(h1 ^ ch, 2654435761); h2 = Math.imul(h2 ^ ch, 1597334677); }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507); h1 ^= Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507); h2 ^= Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+}
+function openDungeon() {
+  $('dgName').value = '';
+  $('dgMsg').textContent = ''; $('dgMsg').className = 'dg-msg';
+  setTimeout(() => $('dgName').focus(), 30);
+}
+$('dgForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const name = $('dgName').value, msg = $('dgMsg'), form = $('dgForm');
+  if (!name) return;
+  if (DUNGEON_NAMES.has(nameHash('dungeon:' + name))) {
+    settings.editorMode = true; saveSettings();
+    msg.textContent = 'Welcome. Dev mode is unlocked.'; msg.className = 'dg-msg good';
+    $('dgName').blur();
+    setTimeout(() => {
+      if (screen !== 'dungeon') return;
+      showScreen('menu');
+      toast('Dev mode is on. Press Tab, or click the key, to open the dev menu.');
+    }, 1200);
+  } else {
+    msg.textContent = 'That is not your name.'; msg.className = 'dg-msg bad';
+    form.classList.remove('shake'); void form.offsetWidth; form.classList.add('shake');
+    $('dgName').select();
+  }
+});
+function openEditorFromDevMenu() {
+  showHackMenu(false);
+  if (screen === 'editor' || screen === 'levels') { showScreen('levels'); return; }
+  if (screen === 'play') {
+    if (game.mode === 'test') { leavePlay(); showScreen('levels'); return; }
+    game.paused = false; upInput = false; hideOverlay();
+  }
+  track('editor-open');
+  showScreen('levels');
+}
+function lockDevMode() {
+  showHackMenu(false);
+  if (screen === 'play' && game.mode === 'test') leavePlay();
+  settings.editorMode = false; saveSettings();
+  if (screen === 'levels' || screen === 'editor') showScreen('menu');
+  else if (screen === 'play') { updateHud(true); if (game.paused) showPauseMenu(); }
+  toast('Dev mode is locked. The editor and the dev menu are hidden, and no hacks are on.');
+}
+// The order of the levels list is the order the levels are played in
+function moveLevel(i, by) {
+  const j = i + by;
+  if (j < 0 || j >= levels.length) return;
+  [levels[i], levels[j]] = [levels[j], levels[i]];
+  saveLevels(); renderLevelList();
+  const b = $('levelList').querySelector(`.gd-row[data-i="${j}"] [data-act="${by < 0 ? 'up' : 'down'}"]`);
+  if (b && !b.disabled) b.focus();
+}
+
 // --- the Settings menu ---
 const GAME_SETTINGS = [
-  ['editorMode', 'DEV MODE', 'Unlocks the level editor and the hack menu (Tab): noclip, speedhack, hitboxes and more. Until it is on, they are hidden and cannot be used.'],
   ['showProgress', 'PROGRESS BAR', 'The bar at the top while you play.'],
   ['showPercent', 'PERCENTAGE', 'The number next to the progress bar.'],
   ['showAttempts', 'ATTEMPT COUNTER', 'The "Attempt 3" text at the start of each try.'],
@@ -5125,19 +5200,13 @@ $('modalBody').addEventListener('change', e => {
   const c = e.target.closest('[data-set]');
   if (!c || modalKind !== 'game') return;
   settings[c.dataset.set] = c.checked; saveSettings();
-  if (c.dataset.set === 'editorMode') {
-    $('btnEditor').hidden = !settings.editorMode;
-    if (!settings.editorMode) showHackMenu(false);
-    toast(settings.editorMode ? 'Dev mode on. The EDITOR button is on the main menu, and Tab opens the hack menu.' : 'Dev mode off. The editor and the hack menu are hidden, and no hacks are on.');
-    requestAnimationFrame(() => fitText());
-  }
 });
 
 function showHowToPlay() {
   showModal('HOW TO PLAY', `<dl class="keys-list">
       <dt>SPACE / UP / CLICK</dt><dd>Hold to fly up. Let go to fall.</dd>
       <dt>ESC</dt><dd>Pause.</dd>
-${settings.editorMode ? `      <dt>TAB</dt><dd>Open or close the hack menu (dev mode).</dd>
+${settings.editorMode ? `      <dt>TAB</dt><dd>Open or close the dev menu (dev mode).</dd>
       <dt>I</dt><dd>Noclip on or off.</dd>
       <dt>H</dt><dd>Show hitboxes on or off.</dd>
 ` : ''}    </dl>
@@ -5162,7 +5231,7 @@ function afterWarning(go) {
 // buttons
 $('btnPlay').addEventListener('click', () => afterWarning(() => { if (startRun()) track('play-start'); }));
 $('btnPractice').addEventListener('click', () => showScreen('practice'));
-$('btnEditor').addEventListener('click', () => { track('editor-open'); showScreen('levels'); });
+$('btnKey').addEventListener('click', () => { if (settings.editorMode) showHackMenu(true); else showScreen('dungeon'); });
 $('btnHelp').addEventListener('click', showHowToPlay);
 $('btnSettings').addEventListener('click', showGameSettings);
 document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => showScreen(b.dataset.go)));

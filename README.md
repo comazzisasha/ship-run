@@ -17,7 +17,7 @@ Besides normal page views, the game sends these events:
 | `play-start` | A random run is started with the PLAY button on the main menu (not when it restarts after a crash, or with "play again"). |
 | `level-complete:<levelId>` | The ship gets past the end of a level in a random run or in Practice. `<levelId>` is the level's id from `levels.js`, e.g. `level-complete:crack`. |
 | `practice-start` | A level is started from the Practice screen. |
-| `editor-open` | The level editor is opened with the EDITOR button on the main menu (dev mode only). |
+| `editor-open` | The level editor is opened with Level Editor in the dev menu (dev mode only). |
 | `test-level` | A level is tested from inside the editor. |
 
 Nothing else is tracked while the editor is in use. Nothing is sent when the
