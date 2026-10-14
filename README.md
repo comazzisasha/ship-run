@@ -15,6 +15,7 @@ Besides normal page views, the game sends these events:
 | Event | Sent when |
 | --- | --- |
 | `play-start` | A Random Mix is started with the RANDOM MIX button on the main menu (not when it restarts after a crash, or with "new mix"). |
+| `practice-start` | A level is started in practice mode (PRACTICE on the level path, or from the pause menu). |
 | `level-start` | A level is started from the level path (PLAY on the main menu), or with NEXT after beating a level. |
 | `level-complete:<levelId>` | The ship gets past the end of a level in a Random Mix or on the level path. `<levelId>` is the level's id from `levels.js`, e.g. `level-complete:crack`. |
 | `mix-unlocked` | Beating the last level unlocks the Random Mix. |

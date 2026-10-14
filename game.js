@@ -831,6 +831,7 @@ class World {
     // triggers that fire when the ship passes them, in the order it reaches them
     this.xTriggers = this.triggers.filter(o => !o.touch && !o.spawn).sort((a, b) => a.tx - b.tx || a.idx - b.idx);
     this.nextTrigger = 0;
+    this.fired = [];      // triggers in the order they fired (practice checkpoints replay them)
   }
   firstAtLeast(x) {
     let lo = 0, hi = this.cxs.length;
@@ -865,6 +866,7 @@ class World {
     }
     for (const p of this.parts) p.colors.reset();
     this.nextTrigger = 0;
+    this.fired = [];
   }
 }
 
@@ -1780,7 +1782,7 @@ function sizeCanvas(cv, cssW, cssH) {
 
 // ===== 8. PLAYING ==========================================================
 // mode 'run'      = random mix of LEVELS_PER_RUN levels, crashing reshuffles
-// mode 'level'    = one level, crashing restarts it
+// mode 'level'    = one level, crashing restarts it (in practice: from the last checkpoint)
 // mode 'test'     = one level from the editor, Esc goes back to the editor
 
 const $ = id => document.getElementById(id);
@@ -1798,7 +1800,7 @@ function track(name) {
 }
 // Passing the end of a level in a run or in Practice (not editor tests or plays)
 function trackLevelDone(pi) {
-  if (game.mode === 'test' || game.returnTo === 'levels' || game.cheated) return;   // runs with hacks don't count
+  if (game.mode === 'test' || game.returnTo === 'levels' || game.cheated || game.practice) return;   // runs with hacks don't count
   const part = world.parts[pi];
   if (part) track('level-complete:' + part.id);
 }
@@ -1808,11 +1810,11 @@ function trackLevelDone(pi) {
 // before it is beaten (or it was beaten itself). Beating all of them unlocks the random mix.
 const PROGRESS_KEY = 'shiprun.progress.v1';
 const progress = (() => {
-  const p = { beaten: {}, best: {} };
+  const p = { beaten: {}, best: {}, practice: {} };
   try {
     const d = JSON.parse(localStorage.getItem(PROGRESS_KEY) || '{}');
     if (isOpts(d.beaten)) for (const k in d.beaten) if (d.beaten[k]) p.beaten[k] = true;
-    if (isOpts(d.best)) for (const k in d.best) { const v = Math.floor(Number(d.best[k])); if (v > 0) p.best[k] = Math.min(100, v); }
+    for (const m of ['best', 'practice']) if (isOpts(d[m])) for (const k in d[m]) { const v = Math.floor(Number(d[m][k])); if (v > 0) p[m][k] = Math.min(100, v); }
   } catch (e) { /* storage blocked: nothing beaten */ }
   return p;
 })();
@@ -1825,19 +1827,20 @@ function levelUnlocked(L) {
   return i <= 0 || levelBeaten(list[i - 1]);
 }
 const mixUnlocked = () => hk('unlockLevels') || pathLevels().every(levelBeaten);
-// Only a level played from the level path counts: not the editor, and not with hacks or Safe Mode on
+// Only a level played from the level path counts: not the editor, and not with hacks or Safe Mode on.
+// Practice keeps its own best %, and never beats a level.
 const countsForProgress = () => game.mode === 'level' && game.returnTo === 'path' && !game.cheated && !hk('safeMode');
 function noteBest(pct) {
   if (!countsForProgress()) return false;
-  const id = game.level.id;
-  if (pct <= (progress.best[id] || 0)) return false;
-  progress.best[id] = pct; saveProgress();
+  const id = game.level.id, map = game.practice ? progress.practice : progress.best;
+  if (pct <= (map[id] || 0)) return false;
+  map[id] = pct; saveProgress();
   return true;
 }
 // Marks the level beaten. Returns what it unlocked: { next, mix }
 function noteBeaten() {
   const out = { next: null, mix: false };
-  if (!countsForProgress() || levelBeaten(game.level)) return out;
+  if (!countsForProgress() || game.practice || levelBeaten(game.level)) return out;
   const mixBefore = pathLevels().every(levelBeaten);
   progress.beaten[game.level.id] = true; saveProgress();
   const list = pathLevels(), next = list[list.indexOf(game.level) + 1];
@@ -1873,6 +1876,7 @@ const game = {
   prevScroll: 0, prevY: position, prevTheta: 0, trail: [], lastTrail: null,
   cssScale: 1, dpr: 1, hudKey: '', attemptX: 0,
   time: 0, coinPart: 0, cheated: false, runCoins: 0, stage: null, unlocked: null, newBest: false,
+  practice: false, checkpoints: [], cpNext: 0, cpPending: null,
   nc: { steps: 0, dead: 0, deaths: 0, was: false }, clicks: 0,
 };
 const gameCanvas = $('game'), gameCtx = gameCanvas.getContext('2d');
@@ -1883,6 +1887,7 @@ function startPlay(mode, opts = {}) {
   game.level = opts.level || null;
   game.startScroll = opts.startScroll || 0;
   game.returnTo = opts.returnTo || 'menu';
+  game.practice = !!opts.practice && mode === 'level';
   game.attempts = 0;
   game.lastTrail = null;
   game.paused = false;
@@ -1906,6 +1911,7 @@ function restart() {
   game.prevScroll = scrollX; game.prevY = Me.y; game.prevTheta = Me.theta;
   game.nc = { steps: 0, dead: 0, deaths: 0, was: false }; game.clicks = 0;
   game.time = 0; game.coinPart = world.partAt(shipCenterX + scrollX); game.cheated = cheatsOn(); game.runCoins = 0; game.stage = null;
+  game.checkpoints = []; game.cpNext = CP_EVERY; game.cpPending = null;
   // Testing from the middle: triggers behind the ship have already happened (no fade)
   const sx0 = shipCenterX + scrollX, xt = world.xTriggers;
   while (world.nextTrigger < xt.length && xt[world.nextTrigger].tx < sx0) fireTrigger(xt[world.nextTrigger++], 0, true);
@@ -1913,9 +1919,93 @@ function restart() {
   updateHud(true);
 }
 
+// --- practice mode: checkpoints (the green diamonds) ---
+// A checkpoint is everything that can change while you fly: where the ship is, how it's
+// moving, its speed, size and gravity, which portals, orbs and triggers were used, and the
+// game time (color fades are timed from it). Crashing goes back to the last one.
+// One is placed automatically every CP_EVERY seconds, but only kept once the ship has
+// lived CP_SAFE seconds more, so it never lands right before a crash. Z places one, X removes the last.
+const CP_EVERY = 2, CP_SAFE = 1;
+function takeCheckpoint() {
+  return {
+    scroll: scrollX, speed: currentSpeed, time: game.time,
+    me: { y: Me.y, vy: Me.vy, theta: Me.theta, onGround: Me.onGround, gravity: Me.gravity, size: Me.size },
+    used: world.objects.filter(o => 'used' in o && o.used),
+    fired: world.fired.slice(), nextTrigger: world.nextTrigger,
+  };
+}
+function addCheckpoint(cp) {
+  game.checkpoints.push(cp || takeCheckpoint());
+  updateHud(true);
+}
+function removeCheckpoint() {
+  if (!game.practice || !game.checkpoints.length) return;
+  game.checkpoints.pop();
+  game.cpPending = null; game.cpNext = game.time + CP_EVERY;
+  updateHud(true);
+}
+function placeCheckpoint() {
+  if (!game.practice || !Me.alive || game.dead || game.finished || game.paused) return;
+  addCheckpoint();
+  game.cpPending = null; game.cpNext = game.time + CP_EVERY;
+}
+// After each step: the automatic checkpoints
+function practiceStep() {
+  if (!game.practice || !Me.alive) return;
+  if (game.cpPending && game.time >= game.cpPending.time + CP_SAFE) { addCheckpoint(game.cpPending); game.cpPending = null; }
+  if (!game.cpPending && game.time >= game.cpNext) { game.cpPending = takeCheckpoint(); game.cpNext = game.time + CP_EVERY; }
+}
+// Crashing in practice: back to the last checkpoint, or the start when there is none
+function respawn() {
+  const cp = game.practice && game.checkpoints[game.checkpoints.length - 1];
+  if (!cp) { restart(); return; }
+  world.reset();
+  for (const o of cp.used) o.used = true;
+  for (const o of cp.fired) fireTrigger(o, 0, true);
+  world.nextTrigger = cp.nextTrigger;
+  scrollX = cp.scroll; currentSpeed = cp.speed; game.time = cp.time;
+  Me.reset();
+  Me.setSize(cp.me.size);
+  Object.assign(Me, { y: cp.me.y, vy: cp.me.vy, theta: cp.me.theta, onGround: cp.me.onGround, gravity: cp.me.gravity });
+  Me.syncHitbox(); Me.render();
+  game.deathHitboxes = false;
+  game.dead = false; game.finished = false; game.paused = false; game.acc = 0;
+  game.attempts++;
+  game.attemptX = scrollX + shipCenterX + 150;
+  game.prevScroll = scrollX; game.prevY = Me.y; game.prevTheta = Me.theta;
+  game.nc = { steps: 0, dead: 0, deaths: 0, was: false };
+  game.coinPart = world.partAt(shipCenterX + scrollX); game.cheated = cheatsOn(); game.stage = null;
+  game.cpPending = null; game.cpNext = game.time + CP_EVERY;
+  hideOverlay();
+  updateHud(true);
+}
+// The pause menu's PRACTICE / NORMAL switch
+function togglePractice() {
+  if (game.mode !== 'level' || game.returnTo !== 'path') return;
+  game.practice = !game.practice;
+  if (game.practice) {
+    track('practice-start');
+    game.checkpoints = []; game.cpPending = null; game.cpNext = game.time + CP_EVERY;
+    if (Me.alive) addCheckpoint();     // start practicing from right here
+    resumeGame();
+  } else { game.attempts = 0; restart(); }
+}
+function drawCheckpoints(ctx, camL) {
+  if (!game.practice) return;
+  for (const cp of game.checkpoints) {
+    const x = cp.scroll + shipCenterX;
+    if (x < camL - 30 || x > camL + VIEW_WIDTH + 30) continue;
+    const cy = screenHeight - cp.me.y - gridSize * (cp.me.size === 'mini' ? miniScale : 1) / 2, r = 9;
+    ctx.beginPath(); ctx.moveTo(x, cy - r); ctx.lineTo(x + r, cy); ctx.lineTo(x, cy + r); ctx.lineTo(x - r, cy); ctx.closePath();
+    ctx.fillStyle = '#3cff6a'; ctx.strokeStyle = '#000'; ctx.lineWidth = 2.5;
+    ctx.fill(); ctx.stroke();
+  }
+}
+
 // --- color triggers, alpha triggers and coins (they never change how the ship moves) ---
 function fireTrigger(o, now, instant) {
   o.fired = true;
+  world.fired.push(o);
   const cs = world.parts[o.part].colors, fade = instant ? 0 : o.fadeTime;
   if (o.t === 'ColorTrigger') cs.set(o.target, o.spec, now, fade);
   else if (o.group) cs.setGroup(o.group, o.opacity, now, fade);
@@ -1936,7 +2026,7 @@ function playSpecials() {
   while (game.coinPart < pi) { trackLevelDone(game.coinPart); keepCoins(game.coinPart++); }
 }
 function keepCoins(pi) {
-  if (game.mode === 'test' || game.cheated || hk('safeMode')) return;
+  if (game.mode === 'test' || game.cheated || game.practice || hk('safeMode')) return;
   const part = world.parts[pi];
   if (!part) return;
   for (const o of world.coins) if (o.part === pi && o.got) saveCoin(part.id, o.key);
@@ -1964,6 +2054,7 @@ function step() {
   playSpecials();
   Move(currentSpeed);
   game.time += dt;
+  practiceStep();
   if (!Me.alive) onDeath();
   else if (shipCenterX + scrollX >= world.endPx) onFinish();
 }
@@ -2049,6 +2140,7 @@ function showPauseMenu() {
         ${roundBtn('resume', 'green', 'i-tri', 'RESUME')}
         ${roundBtn('restart', 'green', 'i-restart', game.mode === 'run' ? 'NEW MIX' : 'RESTART')}
         ${roundBtn('quit', 'green', 'i-menu', game.mode === 'run' ? 'MENU' : 'BACK')}
+        ${game.mode === 'level' && game.returnTo === 'path' ? roundBtn('practice', 'cyan', 'i-practice', game.practice ? 'NORMAL' : 'PRACTICE') : ''}
         ${settings.editorMode ? roundBtn('dev', 'blue', 'i-key', 'DEV') : ''}
       </div>
     </div>`);
@@ -2071,12 +2163,13 @@ function unlockLines() {
   let out = '';
   if (u.next) out += `<span class="done-line o gold">NEW LEVEL UNLOCKED: ${esc(u.next.name)}</span>`;
   if (u.mix) out += `<span class="done-line o gold">RANDOM MIX UNLOCKED!</span>`;
+  if (game.practice && !levelBeaten(game.level)) out += '<span class="done-line o small">NOW BEAT IT IN NORMAL MODE TO UNLOCK THE NEXT LEVEL</span>';
   if (!out && game.mode === 'level' && game.returnTo === 'path' && (game.cheated || hk('safeMode'))) out = '<span class="done-line o small">HACKS WERE ON, SO THIS DOESN\'T COUNT</span>';
   return out;
 }
 function showComplete() {
   const run = game.mode === 'run', next = nextPathLevel();
-  showOverlay(`<span class="done-title gold" data-fit>${run ? 'MIX COMPLETE!' : 'LEVEL COMPLETE!'}</span>
+  showOverlay(`<span class="done-title gold" data-fit>${run ? 'MIX COMPLETE!' : game.practice ? 'PRACTICE COMPLETE!' : 'LEVEL COMPLETE!'}</span>
     <div class="done-card gd-dark">
       <span class="done-line o">${run ? world.parts.length + ' RANDOM LEVELS' : esc(game.level.name)}</span>
       <span class="done-line o">ATTEMPTS: ${game.attempts}</span>
@@ -2084,7 +2177,8 @@ function showComplete() {
       ${unlockLines()}
       <div class="round-row">
         ${roundBtn('again', 'green', 'i-restart', run ? 'NEW MIX' : 'AGAIN')}
-        ${next ? roundBtn('next', 'green', 'i-tri', 'NEXT') : ''}
+        ${game.practice ? roundBtn('normal', 'green', 'i-tri', 'NORMAL MODE') : ''}
+        ${next && !game.practice ? roundBtn('next', 'green', 'i-tri', 'NEXT') : ''}
         ${roundBtn('quit', 'green', 'i-menu', run ? 'MENU' : 'BACK')}
       </div>
     </div>`);
@@ -2096,9 +2190,11 @@ $('overlay').addEventListener('click', e => {
   if (act === 'resume') resumeGame();
   else if (act === 'restart') restart();
   else if (act === 'again') { if (game.mode === 'run') startRun(); else { game.attempts = 0; restart(); } }
+  else if (act === 'normal') { game.practice = false; game.attempts = 0; restart(); }
   else if (act === 'quit') leavePlay();
   else if (act === 'next') { const L = nextPathLevel(); if (L) { track('level-start'); startPlay('level', { level: L, returnTo: 'path' }); } }
   else if (act === 'dev') showHackMenu(true);
+  else if (act === 'practice') togglePractice();
 });
 
 function fitGameCanvas() {
@@ -2148,6 +2244,7 @@ function drawGame() {
   for (const o of vis) (o.zRank >= Z_FRONT ? front : behind).push(o);
   fadeShipX = layout ? null : wx;
   drawObjects(ctx, behind, 'back');
+  drawCheckpoints(ctx, camL);
   if (!hk('hidePlayer')) drawPlayer(ctx, wx, yI, thI, Me.sizeScale, Me.gravity, upInput && Me.alive);
   drawPortalFronts(ctx, behind);
   if (front.length) drawObjects(ctx, front);
@@ -2193,8 +2290,9 @@ function runLabel() {
 }
 function updateHud(force) {
   const pct = currentPct();
-  const label = game.mode === 'run' ? runLabel() : game.mode === 'test' ? 'TESTING: ' + (game.level ? game.level.name : '') : (game.level ? game.level.name : '');
-  const key = pct + '|' + label + '|' + hk('noclip') + '|' + hk('hidePause') + '|' + game.mode;
+  let label = game.mode === 'run' ? runLabel() : game.mode === 'test' ? 'TESTING: ' + (game.level ? game.level.name : '') : (game.level ? game.level.name : '');
+  if (game.practice) label = 'PRACTICE: ' + label;
+  const key = pct + '|' + label + '|' + hk('noclip') + '|' + hk('hidePause') + '|' + game.mode + '|' + game.checkpoints.length;
   if (!force && key === game.hudKey) return;
   game.hudKey = key;
   $('progFill').style.width = pct + '%';
@@ -2203,6 +2301,9 @@ function updateHud(force) {
   $('badgeNoclip').hidden = !hk('noclip');
   $('btnPause').hidden = hk('hidePause');
   $('btnPause').setAttribute('aria-label', game.mode === 'test' ? 'Back to the editor' : 'Pause');
+  $('cpBtns').hidden = !game.practice;
+  $('cpRemove').disabled = !game.checkpoints.length;
+  $('frame').classList.toggle('practice', game.practice);
   applyHudSettings();
 }
 function applyHudSettings() {
@@ -4829,24 +4930,30 @@ function renderPath() {
   box.innerHTML = list.map((L, i) => {
     const open = levelUnlocked(L), won = levelBeaten(L), best = won ? 100 : progress.best[L.id] || 0;
     const check = won ? '<svg class="path-check" aria-label="beaten"><use href="#i-check"/></svg>' : '';
+    const prac = progress.practice[L.id] || 0;
     const info = open
-      ? `<div class="path-bar"><div class="progress"><div class="progress-fill" style="width:${best}%"></div></div><span class="o">${best}%</span></div>`
+      ? `<div class="path-bar"><div class="progress"><div class="progress-fill" style="width:${best}%"></div></div><span class="o">${best}%</span></div>
+         <div class="path-bar practice"><div class="progress"><div class="progress-fill" style="width:${prac}%"></div></div><span class="o">${prac}%</span></div>`
       : `<span class="gd-row-meta">BEAT ${esc(list[i - 1].name)} TO UNLOCK</span>`;
     return `<div class="gd-row path-row${open ? '' : ' locked'}${won ? ' beaten' : ''}">
       <span class="path-num" aria-hidden="true">${i + 1}</span>
       <div class="gd-row-main"><span class="gd-row-name">${esc(L.name)}${check}</span>${info}</div>
       <div class="gd-row-actions">${open
-        ? `<button class="gd-btn" data-play="${esc(L.id)}" aria-label="Play ${esc(L.name)}">PLAY</button>`
+        ? `<button class="gd-btn" data-play="${esc(L.id)}" aria-label="Play ${esc(L.name)}">PLAY</button>
+           <button class="gd-btn blue small" data-practice="${esc(L.id)}" aria-label="Practice ${esc(L.name)}">PRACTICE</button>`
         : '<svg class="path-lock" role="img" aria-label="Locked"><use href="#i-lock"/></svg>'}</div>
     </div>`;
   }).join('');
 }
 $('pathList').addEventListener('click', e => {
-  const b = e.target.closest('[data-play]'); if (!b) return;
-  const L = pathLevels().find(x => x.id === b.dataset.play);
+  const b = e.target.closest('[data-play], [data-practice]'); if (!b) return;
+  const practice = !!b.dataset.practice;
+  const L = pathLevels().find(x => x.id === (b.dataset.play || b.dataset.practice));
   if (!L || !levelUnlocked(L)) return;
-  afterWarning(() => { track('level-start'); startPlay('level', { level: L, returnTo: 'path' }); });
+  afterWarning(() => { track(practice ? 'practice-start' : 'level-start'); startPlay('level', { level: L, returnTo: 'path', practice }); });
 });
+$('cpPlace').addEventListener('click', placeCheckpoint);
+$('cpRemove').addEventListener('click', removeCheckpoint);
 
 function renderLevelList() {
   const st = $('publishStatus');
@@ -5288,6 +5395,7 @@ function showHowToPlay() {
   showModal('HOW TO PLAY', `<dl class="keys-list">
       <dt>SPACE / UP / CLICK</dt><dd>Hold to fly up. Let go to fall.</dd>
       <dt>ESC</dt><dd>Pause.</dd>
+      <dt>Z / X</dt><dd>In practice mode: place a checkpoint / remove the last one.</dd>
 ${settings.editorMode ? `      <dt>TAB</dt><dd>Open or close the dev menu (dev mode).</dd>
       <dt>I</dt><dd>Noclip on or off.</dd>
       <dt>H</dt><dd>Show hitboxes on or off.</dd>
@@ -5354,6 +5462,8 @@ window.addEventListener('keydown', e => {
       else if (game.paused) resumeGame();
       else pauseGame();
     }
+    else if (e.code === 'KeyZ' && !e.repeat) placeCheckpoint();
+    else if (e.code === 'KeyX' && !e.repeat) removeCheckpoint();
     else if (e.code === 'KeyI' && settings.editorMode) setHack('noclip', !hk('noclip'));
     else if (e.code === 'KeyH' && settings.editorMode) setHack('hitboxes', !hk('hitboxes'));
     return;
@@ -5366,7 +5476,7 @@ window.addEventListener('keyup', e => {
   if (e.key === ' ') { ed.spaceDown = false; delete edCanvas.dataset.pan; }
 });
 $('stage').addEventListener('pointerdown', e => {
-  if (e.target.closest('.overlay, .pause-btn')) return;
+  if (e.target.closest('.overlay, .pause-btn, .cp-btns')) return;
   if (game.paused || game.finished) return;
   e.preventDefault(); queueInput(true, e); noteClick();
 });
@@ -5396,7 +5506,7 @@ function frame(now) {
       if (game.dead) {
         applyInputUntil(); inputStepDone();   // holding through the respawn still works
         game.deathTimer -= t;
-        if (game.deathTimer <= 0) restart();
+        if (game.deathTimer <= 0) respawn();
       } else {
         game.acc += t;
         while (game.acc >= dt) {

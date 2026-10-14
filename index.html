@@ -520,6 +520,14 @@ body .toast.over.under { top: auto; bottom: calc(10px + env(safe-area-inset-bott
 .hk-dot.red { background: #ff3b3b; }
 .hud-noclip { font-family: var(--f-gd); font-size: calc(var(--u) * 9); color: #ff6b5c; text-shadow: 0 0 0 #000, 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000; }
 .pause-btn { position: absolute; top: calc(var(--u) * 6); right: calc(var(--u) * 8); --r: calc(var(--u) * 28); pointer-events: auto; }
+.cp-btns { position: absolute; bottom: calc(var(--u) * 8); left: 50%; transform: translateX(-50%); display: flex; gap: calc(var(--u) * 14); pointer-events: auto; }
+.cp-btns .round { --r: calc(var(--u) * 30); box-shadow: 0 0 0 calc(var(--u) * 1.5) #fff; border-width: calc(var(--u) * 2); }
+.cp-btns .round:disabled { opacity: .4; cursor: default; }
+.frame.practice .hud-progress .progress-fill { background: linear-gradient(180deg, #b9fbff, #3fd8f0 55%, #1a9fc4); }
+.path-bar.practice .progress-fill { background: linear-gradient(180deg, #b9fbff, #3fd8f0 55%, #1a9fc4); }
+.path-bar.practice { margin-top: -2px; }
+.path-row .gd-row-actions { flex-direction: column; align-items: stretch; flex: none; }
+.path-row .path-bar { min-width: 0; }
 .pause-btn svg { width: calc(var(--r) * .72); height: calc(var(--r) * .72); }
 .overlay { position: absolute; inset: 0; display: grid; place-items: center; align-content: center; gap: calc(var(--u) * 12); padding: calc(var(--u) * 14); background: rgba(0, 0, 0, .38); cursor: default; }
 .gd-dark { background: rgba(0, 0, 0, .62); border-radius: 22px; }
@@ -1458,7 +1466,7 @@ body .toast.over.under { top: auto; bottom: calc(10px + env(safe-area-inset-bott
       <h2><span class="gold" data-fit>LEVELS</span></h2>
     </header>
     <div class="page-body">
-      <p class="page-note" id="pathNote">Beat a level to unlock the next one.</p>
+      <p class="page-note" id="pathNote">Beat a level to unlock the next one. Practice drops checkpoints as you fly, but only a normal run counts.</p>
       <div class="gd-list">
         <div id="pathList"></div>
       </div>
@@ -1510,6 +1518,10 @@ body .toast.over.under { top: auto; bottom: calc(10px + env(safe-area-inset-bott
             <div class="hud-labels o" id="hudLabels"></div>
           </div>
           <button class="round dark pause-btn" id="btnPause" aria-label="Pause"><svg><use href="#i-pause"/></svg></button>
+          <div class="cp-btns" id="cpBtns" hidden>
+            <button class="round cyan" id="cpPlace" aria-label="Place a checkpoint (Z)"><svg aria-hidden="true"><use href="#i-practice"/></svg></button>
+            <button class="round gray" id="cpRemove" aria-label="Remove the last checkpoint (X)"><svg aria-hidden="true"><use href="#i-x"/></svg></button>
+          </div>
         </div>
         <div class="overlay" id="overlay" hidden></div>
       </div>
