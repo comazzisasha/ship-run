@@ -75,6 +75,40 @@ const velUnit = 60 * pxPerUnit;
 const nearRange = 3 * gridSize;
 let pressed = false;
 
+// Input timing. Presses and releases are queued with the time they really
+// happened, and each one is applied at the physics step it falls in. On a fast
+// screen that is the next step, same as before. On a slow one (a Chromebook at
+// 15 fps runs 3 or 4 steps per frame) a press no longer waits for the end of
+// the frame, and a quick tap that starts and ends between two frames still
+// flies up for at least one step instead of being lost.
+const inputQueue = [];
+let tapHeld = false;        // a press that no step has seen yet
+let releaseLater = false;   // its release came before any step saw it
+function queueInput(down, e) {
+  if (screen !== 'play') { if (!down) releaseInput(); return; }
+  const now = performance.now();
+  const t = e && e.timeStamp > 0 && Math.abs(e.timeStamp - now) < 1000 ? e.timeStamp : now;
+  inputQueue.push({ down, t });
+}
+function applyInput(down) {
+  if (down) { upInput = true; pressed = true; tapHeld = true; releaseLater = false; }
+  else if (tapHeld) releaseLater = true;
+  else upInput = false;
+}
+// Apply every queued press or release that happened by time t (all of them without t)
+function applyInputUntil(t) {
+  while (inputQueue.length && (t === undefined || inputQueue[0].t <= t)) applyInput(inputQueue.shift().down);
+}
+// After a step: the tap has now been seen, so its release can happen
+function inputStepDone() {
+  tapHeld = false;
+  if (releaseLater) { releaseLater = false; upInput = false; }
+}
+// Let go of everything right now (pause, leaving, losing focus)
+function releaseInput() {
+  inputQueue.length = 0; tapHeld = false; releaseLater = false; upInput = false;
+}
+
 const speed_lookup = { half: 8.4, normal: 10.4, double: 12.9, triple: 15.6, quad: 19.2 };
 let currentSpeed = speed_lookup[initialSpeed];
 
@@ -1809,7 +1843,7 @@ function startPlay(mode, opts = {}) {
   game.attempts = 0;
   game.lastTrail = null;
   game.paused = false;
-  upInput = false; pressed = false;
+  releaseInput(); pressed = false;
   if (mode !== 'run') world = new World([game.level]);
   showScreen('play');
   restart();
@@ -1900,7 +1934,7 @@ function onDeath() {
 
 function onFinish() {
   game.finished = true;
-  upInput = false;
+  releaseInput();
   while (game.coinPart < world.parts.length) { trackLevelDone(game.coinPart); keepCoins(game.coinPart++); }
   if (game.mode === 'test') {
     game.lastTrail = { pts: game.trail, died: false };
@@ -1911,7 +1945,7 @@ function onFinish() {
 }
 
 function leavePlay(message) {
-  upInput = false;
+  releaseInput();
   game.paused = false;
   hideOverlay();
   if (game.mode === 'test') {
@@ -1933,7 +1967,7 @@ function pauseGame() {
   if (game.mode === 'test') { leavePlay(); return; }
   if (game.finished || game.dead || game.paused) return;
   game.paused = true;
-  upInput = false;
+  releaseInput();
   showPauseMenu();
 }
 function resumeGame() {
@@ -4648,7 +4682,7 @@ function showScreen(name) {
   document.body.dataset.screen = name;
   document.querySelectorAll('.screen').forEach(s => { s.hidden = s.id !== 'scr-' + name; });
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
-  upInput = false;
+  releaseInput();
   if (name === 'menu') { renderMenuNote(); $('btnEditor').hidden = !settings.editorMode; requestAnimationFrame(renderKitTile); }
   if (name === 'icons') requestAnimationFrame(openKit);
   if (name === 'play') requestAnimationFrame(fitGameCanvas);
@@ -5162,7 +5196,7 @@ window.addEventListener('keydown', e => {
   if (screen === 'play') {
     if (e.code === 'Space' || e.code === 'ArrowUp') {
       e.preventDefault();
-      if (!e.repeat && !game.paused && !game.finished) { upInput = true; pressed = true; noteClick(); }
+      if (!e.repeat && !game.paused && !game.finished) { queueInput(true, e); noteClick(); }
     } else if (e.code === 'Escape') {
       if (game.mode === 'test' || game.finished) leavePlay();
       else if (game.paused) resumeGame();
@@ -5176,17 +5210,17 @@ window.addEventListener('keydown', e => {
   if (e.key === 'Escape' && screen !== 'menu') showScreen('menu');
 });
 window.addEventListener('keyup', e => {
-  if (e.code === 'Space' || e.code === 'ArrowUp') upInput = false;
+  if (e.code === 'Space' || e.code === 'ArrowUp') queueInput(false, e);
   if (e.key === ' ') { ed.spaceDown = false; delete edCanvas.dataset.pan; }
 });
 $('stage').addEventListener('pointerdown', e => {
   if (e.target.closest('.overlay, .pause-btn')) return;
   if (game.paused || game.finished) return;
-  e.preventDefault(); upInput = true; pressed = true; noteClick();
+  e.preventDefault(); queueInput(true, e); noteClick();
 });
-window.addEventListener('pointerup', () => { if (screen === 'play') upInput = false; });
-window.addEventListener('pointercancel', () => { upInput = false; });
-window.addEventListener('blur', () => { upInput = false; ed.spaceDown = false; });
+window.addEventListener('pointerup', e => { if (screen === 'play') queueInput(false, e); });
+window.addEventListener('pointercancel', () => { releaseInput(); });
+window.addEventListener('blur', () => { releaseInput(); ed.spaceDown = false; });
 
 window.addEventListener('resize', () => {
   if (screen === 'play') fitGameCanvas();
@@ -5204,15 +5238,22 @@ function frame(now) {
   lastFrame = now;
   countFrame(now);
   if (screen === 'play') {
-    const t = elapsed * hackSpeed();     // Speedhack: the game's clock runs faster or slower
+    const speed = hackSpeed();
+    const t = elapsed * speed;     // Speedhack: the game's clock runs faster or slower
     if (!game.finished && !game.paused) {
       if (game.dead) {
+        applyInputUntil(); inputStepDone();   // holding through the respawn still works
         game.deathTimer -= t;
         if (game.deathTimer <= 0) restart();
       } else {
         game.acc += t;
         while (game.acc >= dt) {
+          // This step ends at (acc - dt) game seconds before now. The last step of
+          // the frame takes every press so far, so a fast screen feels the same as before.
+          if (game.acc - dt < dt) applyInputUntil();
+          else applyInputUntil(now - (game.acc - dt) / speed * 1000);
           step();
+          inputStepDone();
           game.acc -= dt;
           if (game.dead || game.finished) { game.acc = 0; break; }
         }
