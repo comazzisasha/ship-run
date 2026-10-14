@@ -372,6 +372,22 @@ h1.logo { margin-bottom: 0; font: inherit; }
   .kit-info { grid-template-columns: auto; }
 }
 
+/* ---------- locked tiles and the level path ---------- */
+.tile { position: relative; }
+.tile-lock { position: absolute; right: -10px; top: -12px; width: 46%; height: 46%; display: none; filter: drop-shadow(3px 4px 0 rgba(0, 12, 45, .4)); }
+.tile.locked .tile-lock { display: block; }
+.tile.locked .tile-face { filter: grayscale(.85) brightness(.75); }
+.gd-row.path-row { flex-wrap: nowrap; }
+.path-row .gd-row-main { flex: 1 1 0; }
+.path-row .gd-row-name { font-size: clamp(18px, 5vw, 24px); overflow-wrap: break-word; }
+.path-num { flex: none; width: 1.6em; font-family: var(--f-gd); font-size: 28px; text-align: center; color: var(--cream); --ow: 2px; }
+.path-bar { display: flex; align-items: center; gap: 10px; max-width: 360px; --u: 1.1px; }
+.path-bar .o { font-family: var(--f-gd); font-size: 15px; min-width: 3.2em; }
+.path-row.beaten .path-num { color: #8dff6a; }
+.path-row.locked .gd-row-name, .path-row.locked .path-num { opacity: .55; }
+.path-lock { width: 44px; height: 44px; flex: none; }
+.path-check { width: 1em; height: 1em; vertical-align: -.1em; margin-left: .3em; }
+
 /* ---------- the dungeon (dev mode unlock) ---------- */
 #scr-dungeon { overflow: auto; background: radial-gradient(ellipse at 50% 35%, #2b2433 0%, #15111b 55%, #060509 100%); }
 #scr-dungeon .page-body { max-width: 560px; justify-items: center; padding-top: clamp(24px, 8vh, 80px); text-align: center; }
@@ -1271,6 +1287,16 @@ body .toast.over.under { top: auto; bottom: calc(10px + env(safe-area-inset-bott
       <path d="M42 42 L84 84 M64 64 L74 54 M76 76 L86 66" stroke="url(#g-gold)" stroke-width="10"/>
     </g>
   </symbol>
+  <symbol id="i-check" viewBox="0 0 30 30">
+    <path d="M5 15.5 L12 22.5 L25.5 6.5" fill="none" stroke="#000" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M5 15.5 L12 22.5 L25.5 6.5" fill="none" stroke="#6dff3a" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/>
+  </symbol>
+  <symbol id="i-lock" viewBox="0 0 100 100">
+    <path d="M30 46 V34 A20 20 0 0 1 70 34 V46" fill="none" stroke="#000" stroke-width="22"/>
+    <path d="M30 46 V34 A20 20 0 0 1 70 34 V46" fill="none" stroke="#d9d9d9" stroke-width="10"/>
+    <rect x="18" y="44" width="64" height="48" rx="8" fill="url(#g-gold)" stroke="#000" stroke-width="7"/>
+    <path d="M50 60 V74" stroke="#000" stroke-width="9" stroke-linecap="round"/>
+  </symbol>
   <symbol id="i-corner" viewBox="0 0 140 140">
     <path d="M-6 -6 H126 V18 H96 V34 H56 V56 H34 V96 H18 V126 H-6 Z" transform="translate(7 8)" fill="#001640" opacity=".45"/>
     <path d="M-6 -6 H126 V18 H96 V34 H56 V56 H34 V96 H18 V126 H-6 Z" fill="#fff" stroke="#fff" stroke-width="10" stroke-linejoin="round"/>
@@ -1313,11 +1339,12 @@ body .toast.over.under { top: auto; bottom: calc(10px + env(safe-area-inset-bott
       <button class="tile pink-face" id="btnIcons" aria-label="Icon kit: pick your cube, ship and colors">
         <span class="tile-face"><canvas class="tile-icon" id="kitTileIcon" aria-hidden="true"></canvas><span class="tile-label" data-fit>ICONS</span></span>
       </button>
-      <button class="tile" id="btnPlay" aria-label="Play a random run">
+      <button class="tile" id="btnPlay" aria-label="Play the levels">
         <span class="tile-face"><svg class="tile-icon" aria-hidden="true"><use href="#i-play"/></svg><span class="tile-label" data-fit>PLAY</span></span>
       </button>
-      <button class="tile blue-face" id="btnPractice" aria-label="Practice one level">
-        <span class="tile-face"><svg class="tile-icon" aria-hidden="true"><use href="#i-practice"/></svg><span class="tile-label" data-fit>PRACTICE</span></span>
+      <button class="tile orange-face" id="btnMix" aria-label="Random mix">
+        <span class="tile-face"><svg class="tile-icon" aria-hidden="true"><use href="#i-shuffle"/></svg><span class="tile-label" data-fit>RANDOM MIX</span></span>
+        <svg class="tile-lock" aria-hidden="true"><use href="#i-lock"/></svg>
       </button>
     </div>
     <button class="dungeon-key" id="btnKey" aria-label="A key" title="A key"><svg aria-hidden="true"><use href="#i-key"/></svg></button>
@@ -1333,8 +1360,8 @@ body .toast.over.under { top: auto; bottom: calc(10px + env(safe-area-inset-bott
           play Geometry Dash-style levels online right here, with no download, no install and no login.</p>
         <h2>How to play</h2>
         <p>Hold Space, the Up arrow, the mouse button or your finger to fly the ship up, and let go to fall. Press Esc to pause.
-          <b>Play</b> starts a random run of 5 levels back to back; crash once and a new run starts. <b>Practice</b> mode lets
-          you replay any single level as many times as you like and collect its user coins.</p>
+          <b>Play</b> opens the levels, from easiest to hardest: beat one to unlock the next, and collect its user coins.
+          Beat them all to unlock the <b>Random Mix</b>: 5 random levels back to back, where one crash starts a new mix.</p>
         <h2>Features</h2>
         <ul>
           <li>Ship mode levels inspired by Clubstep, Clutterfunk, Cycles, ElectroDynamix, Nightmare, Necropolis and more.</li>
@@ -1421,20 +1448,19 @@ body .toast.over.under { top: auto; bottom: calc(10px + env(safe-area-inset-bott
     </div>
   </section>
 
-  <section id="scr-practice" class="screen page" hidden>
+  <section id="scr-path" class="screen page" hidden>
     <svg class="corner tl" aria-hidden="true"><use href="#i-corner"/></svg>
     <svg class="corner tr" aria-hidden="true"><use href="#i-corner"/></svg>
     <svg class="corner bl" aria-hidden="true"><use href="#i-corner"/></svg>
     <svg class="corner br" aria-hidden="true"><use href="#i-corner"/></svg>
     <header class="gd-head">
       <button class="back-btn" data-go="menu" aria-label="Back to menu"><svg><use href="#i-back"/></svg></button>
-      <h2><span class="gold" data-fit>PRACTICE</span></h2>
+      <h2><span class="gold" data-fit>LEVELS</span></h2>
     </header>
     <div class="page-body">
-      <p class="page-note">Play one level on its own. Crashing restarts just that level.</p>
+      <p class="page-note" id="pathNote">Beat a level to unlock the next one.</p>
       <div class="gd-list">
-        <div class="gd-list-head"><span class="gold">LEVELS</span></div>
-        <div id="practiceList"></div>
+        <div id="pathList"></div>
       </div>
     </div>
   </section>

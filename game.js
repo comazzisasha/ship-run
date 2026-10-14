@@ -3,7 +3,7 @@
    SHIP RUN  -  game.js
 
    1. Settings                 7. Drawing
-   2. Your CMU constants       8. Playing (random run / practice / editor test)
+   2. Your CMU constants       8. Playing (levels / random mix / editor test)
    3. Geometry helpers         9. Saving levels (browser + levels.js)
    4. Objects                 10. Level editor
    5. Player (your physics)   11. Menus and start-up
@@ -1779,8 +1779,8 @@ function sizeCanvas(cv, cssW, cssH) {
 
 
 // ===== 8. PLAYING ==========================================================
-// mode 'run'      = random run of LEVELS_PER_RUN levels, crashing reshuffles
-// mode 'practice' = one level, crashing restarts it
+// mode 'run'      = random mix of LEVELS_PER_RUN levels, crashing reshuffles
+// mode 'level'    = one level, crashing restarts it
 // mode 'test'     = one level from the editor, Esc goes back to the editor
 
 const $ = id => document.getElementById(id);
@@ -1801,6 +1801,49 @@ function trackLevelDone(pi) {
   if (game.mode === 'test' || game.returnTo === 'levels' || game.cheated) return;   // runs with hacks don't count
   const part = world.parts[pi];
   if (part) track('level-complete:' + part.id);
+}
+
+// --- progress: which levels are beaten, and the best % on each, kept in this browser ---
+// The levels are played in the order of the levels list. A level is unlocked once the one
+// before it is beaten (or it was beaten itself). Beating all of them unlocks the random mix.
+const PROGRESS_KEY = 'shiprun.progress.v1';
+const progress = (() => {
+  const p = { beaten: {}, best: {} };
+  try {
+    const d = JSON.parse(localStorage.getItem(PROGRESS_KEY) || '{}');
+    if (isOpts(d.beaten)) for (const k in d.beaten) if (d.beaten[k]) p.beaten[k] = true;
+    if (isOpts(d.best)) for (const k in d.best) { const v = Math.floor(Number(d.best[k])); if (v > 0) p.best[k] = Math.min(100, v); }
+  } catch (e) { /* storage blocked: nothing beaten */ }
+  return p;
+})();
+function saveProgress() { try { localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress)); } catch (e) { /* ignore */ } }
+const pathLevels = () => levels.filter(L => L.objects.length);
+const levelBeaten = L => !!progress.beaten[L.id];
+function levelUnlocked(L) {
+  if (hk('unlockLevels') || levelBeaten(L)) return true;
+  const list = pathLevels(), i = list.indexOf(L);
+  return i <= 0 || levelBeaten(list[i - 1]);
+}
+const mixUnlocked = () => hk('unlockLevels') || pathLevels().every(levelBeaten);
+// Only a level played from the level path counts: not the editor, and not with hacks or Safe Mode on
+const countsForProgress = () => game.mode === 'level' && game.returnTo === 'path' && !game.cheated && !hk('safeMode');
+function noteBest(pct) {
+  if (!countsForProgress()) return false;
+  const id = game.level.id;
+  if (pct <= (progress.best[id] || 0)) return false;
+  progress.best[id] = pct; saveProgress();
+  return true;
+}
+// Marks the level beaten. Returns what it unlocked: { next, mix }
+function noteBeaten() {
+  const out = { next: null, mix: false };
+  if (!countsForProgress() || levelBeaten(game.level)) return out;
+  const mixBefore = pathLevels().every(levelBeaten);
+  progress.beaten[game.level.id] = true; saveProgress();
+  const list = pathLevels(), next = list[list.indexOf(game.level) + 1];
+  if (next && !levelBeaten(next)) out.next = next;
+  out.mix = !mixBefore && list.every(levelBeaten);
+  return out;
 }
 
 // --- the Pusab font (used for text drawn on the canvas, like "Attempt 3") ---
@@ -1829,7 +1872,7 @@ const game = {
   deathHitboxes: false, teleported: false,
   prevScroll: 0, prevY: position, prevTheta: 0, trail: [], lastTrail: null,
   cssScale: 1, dpr: 1, hudKey: '', attemptX: 0,
-  time: 0, coinPart: 0, cheated: false, runCoins: 0, stage: null,
+  time: 0, coinPart: 0, cheated: false, runCoins: 0, stage: null, unlocked: null, newBest: false,
   nc: { steps: 0, dead: 0, deaths: 0, was: false }, clicks: 0,
 };
 const gameCanvas = $('game'), gameCtx = gameCanvas.getContext('2d');
@@ -1929,6 +1972,7 @@ function onDeath() {
   game.dead = true;
   game.deathHitboxes = hk('deathHitboxes');   // setHitboxes(True)
   game.deathTimer = hk('instantRespawn') ? 0 : 0.5 + dt;   // sleep(0.5) on the next step, then restart()
+  noteBest(currentPct());
   if (game.mode === 'test') game.lastTrail = { pts: game.trail, died: true };
 }
 
@@ -1936,6 +1980,9 @@ function onFinish() {
   game.finished = true;
   releaseInput();
   while (game.coinPart < world.parts.length) { trackLevelDone(game.coinPart); keepCoins(game.coinPart++); }
+  game.newBest = noteBest(100);
+  game.unlocked = noteBeaten();
+  if (game.unlocked.mix) track('mix-unlocked');
   if (game.mode === 'test') {
     game.lastTrail = { pts: game.trail, died: false };
     leavePlay('Reached the end of the level.');
@@ -1958,6 +2005,7 @@ function leavePlay(message) {
 
 function startRun() {
   const pool = randomizerPool();
+  if (!mixUnlocked()) { toast('Beat every level to unlock the Random Mix.'); return false; }
   if (!pool.length) { toast('No levels are in random runs yet. Turn it on in the level editor.'); return false; }
   startPlay('run', { pool, returnTo: 'menu' });
   return true;
@@ -1999,7 +2047,7 @@ function showPauseMenu() {
       <div class="pause-bar"><div class="progress"><div class="progress-fill" style="width:${pct}%"></div></div><span class="o">${pct}%</span></div>
       <div class="round-row">
         ${roundBtn('resume', 'green', 'i-tri', 'RESUME')}
-        ${roundBtn('restart', 'green', 'i-restart', game.mode === 'run' ? 'NEW RUN' : 'RESTART')}
+        ${roundBtn('restart', 'green', 'i-restart', game.mode === 'run' ? 'NEW MIX' : 'RESTART')}
         ${roundBtn('quit', 'green', 'i-menu', game.mode === 'run' ? 'MENU' : 'BACK')}
         ${settings.editorMode ? roundBtn('dev', 'blue', 'i-key', 'DEV') : ''}
       </div>
@@ -2012,15 +2060,31 @@ function coinLine() {
   const dots = world.coins.slice().sort((a, b) => a.X - b.X).map(o => `<i class="coin-dot${o.got ? ' got' : ''}"></i>`).join('');
   return `<span class="done-line o coin-line">COINS: ${dots}</span>${game.cheated ? '<span class="done-line o small">HACKS WERE ON, SO COINS WERE NOT SAVED</span>' : ''}`;
 }
+// The next level on the level path, if it's open to play
+function nextPathLevel() {
+  if (game.mode !== 'level' || game.returnTo !== 'path') return null;
+  const list = pathLevels(), next = list[list.indexOf(game.level) + 1];
+  return next && levelUnlocked(next) ? next : null;
+}
+function unlockLines() {
+  const u = game.unlocked || {};
+  let out = '';
+  if (u.next) out += `<span class="done-line o gold">NEW LEVEL UNLOCKED: ${esc(u.next.name)}</span>`;
+  if (u.mix) out += `<span class="done-line o gold">RANDOM MIX UNLOCKED!</span>`;
+  if (!out && game.mode === 'level' && game.returnTo === 'path' && (game.cheated || hk('safeMode'))) out = '<span class="done-line o small">HACKS WERE ON, SO THIS DOESN\'T COUNT</span>';
+  return out;
+}
 function showComplete() {
-  const run = game.mode === 'run';
-  showOverlay(`<span class="done-title gold" data-fit>${run ? 'RUN COMPLETE!' : 'LEVEL COMPLETE!'}</span>
+  const run = game.mode === 'run', next = nextPathLevel();
+  showOverlay(`<span class="done-title gold" data-fit>${run ? 'MIX COMPLETE!' : 'LEVEL COMPLETE!'}</span>
     <div class="done-card gd-dark">
       <span class="done-line o">${run ? world.parts.length + ' RANDOM LEVELS' : esc(game.level.name)}</span>
       <span class="done-line o">ATTEMPTS: ${game.attempts}</span>
       ${coinLine()}
+      ${unlockLines()}
       <div class="round-row">
-        ${roundBtn('again', 'green', 'i-restart', run ? 'NEW RUN' : 'AGAIN')}
+        ${roundBtn('again', 'green', 'i-restart', run ? 'NEW MIX' : 'AGAIN')}
+        ${next ? roundBtn('next', 'green', 'i-tri', 'NEXT') : ''}
         ${roundBtn('quit', 'green', 'i-menu', run ? 'MENU' : 'BACK')}
       </div>
     </div>`);
@@ -2033,6 +2097,7 @@ $('overlay').addEventListener('click', e => {
   else if (act === 'restart') restart();
   else if (act === 'again') { if (game.mode === 'run') startRun(); else { game.attempts = 0; restart(); } }
   else if (act === 'quit') leavePlay();
+  else if (act === 'next') { const L = nextPathLevel(); if (L) { track('level-start'); startPlay('level', { level: L, returnTo: 'path' }); } }
   else if (act === 'dev') showHackMenu(true);
 });
 
@@ -2158,6 +2223,7 @@ const HACK_DEFAULTS = { deathHitboxes: true };
 const HACK_WINDOWS = [
   { id: 'dev', name: 'Dev', color: '#e0a800', items: [
     { act: 'editor', label: 'Level Editor', desc: 'Make levels, and set the order they are played in.' },
+    ['unlockLevels', 'Unlock All Levels', 'Every level and the random mix can be played, without beating the ones before. Your real progress is kept.'],
     { act: 'lockDev', label: 'Lock Dev Mode', desc: 'Turns dev mode off in this browser. The key on the main menu unlocks it again.' },
   ] },
   { id: 'player', name: 'Player', color: '#e8457c', items: [
@@ -2191,7 +2257,7 @@ const HACK_WINDOWS = [
     ['clock', 'Clock', 'The time of day.'],
   ] },
   { id: 'universal', name: 'Universal', color: '#ff9d2e', items: [
-    ['safeMode', 'Safe Mode', 'Never saves coins, even with no other hack on.'],
+    ['safeMode', 'Safe Mode', 'Never saves coins or progress, even with no other hack on.'],
     { act: 'resetLayout', label: 'Reset Windows', desc: 'Puts the hack windows back in their starting places.' },
     { act: 'allOff', label: 'Turn Everything Off', desc: 'Turns every hack off (Hitboxes on Death goes back on).' },
   ] },
@@ -2216,6 +2282,8 @@ function cheatsOn() { return GAMEPLAY_HACKS.some(id => id === 'speedhack' ? hack
 function setHack(id, v) {
   hacks.on[id] = v; saveHacks();
   if (screen === 'play') updateHud(true);
+  if (screen === 'menu') renderMenuNote();
+  if (screen === 'path') renderPath();
   renderHackMenu();
 }
 
@@ -4659,7 +4727,7 @@ $('edPause').addEventListener('click', e => {
   if (a === 'resume') edClosePause();
   else if (a === 'save') { edSave(); edOpenPause(); }
   else if (a === 'saveexit') { edSave(); edLeave(); }
-  else if (a === 'saveplay') { edSave(); edClosePause(); startPlay('practice', { level: ed.level, returnTo: 'levels' }); }
+  else if (a === 'saveplay') { edSave(); edClosePause(); startPlay('level', { level: ed.level, returnTo: 'levels' }); }
   else if (a === 'exit') {
     if (!edDirty()) { edLeave(); return; }
     armConfirm(b.querySelector('.gold'), 'EXIT WITHOUT SAVING?', () => {
@@ -4696,7 +4764,7 @@ function showScreen(name) {
   if (name === 'dungeon') openDungeon();
   if (name === 'icons') requestAnimationFrame(openKit);
   if (name === 'play') requestAnimationFrame(fitGameCanvas);
-  if (name === 'practice') renderPractice();
+  if (name === 'path') renderPath();
   if (name === 'levels') renderLevelList();
   if (name === 'editor') requestAnimationFrame(() => { edResize(); renderPalette(); edRenderUI(); });
   requestAnimationFrame(() => { fitTitle(); fitText(); });
@@ -4736,10 +4804,12 @@ function afterFont() {
 }
 
 function renderMenuNote() {
-  const n = randomizerPool().length;
-  let note = n
-    ? `${n} level${n === 1 ? '' : 's'} in the random pool. Each run plays ${Math.min(n, LEVELS_PER_RUN)} of them in a random order.`
-    : 'No levels in the random pool yet. Make some in the editor.';
+  const list = pathLevels(), done = list.filter(levelBeaten).length;
+  let note = !list.length ? 'No levels yet. Make some in the editor.'
+    : done === list.length ? `All ${list.length} levels beaten! The Random Mix plays ${Math.min(randomizerPool().length, LEVELS_PER_RUN)} random levels back to back.`
+    : `${done} of ${list.length} levels beaten. Beat them all to unlock the Random Mix.`;
+  $('btnMix').classList.toggle('locked', !mixUnlocked());
+  $('btnMix').setAttribute('aria-label', mixUnlocked() ? 'Random mix' : 'Random mix (locked: beat every level first)');
   if (usingLocal) note += ' You are playing the levels you edited in this browser.';
   $('menuNote').textContent = note;
 }
@@ -4752,18 +4822,30 @@ function levelMeta(L) {
   return `${L.objects.length} OBJECTS · ${cols} COLUMNS · ${(cols / speed_lookup.normal).toFixed(1)} S${dots}`;
 }
 
-function renderPractice() {
-  const box = $('practiceList');
-  if (!levels.length) { box.innerHTML = '<p class="gd-empty">There are no levels yet.</p>'; return; }
-  box.innerHTML = levels.map((L, i) => `<div class="gd-row">
-      <div class="gd-row-main"><span class="gd-row-name">${esc(L.name)}</span><span class="gd-row-meta">${levelMeta(L)}</span></div>
-      <div class="gd-row-actions"><button class="gd-btn" data-play="${i}">PLAY</button></div>
-    </div>`).join('');
+// The level path: every level in order, with your best % on each
+function renderPath() {
+  const box = $('pathList'), list = pathLevels();
+  if (!list.length) { box.innerHTML = '<p class="gd-empty">There are no levels yet.</p>'; return; }
+  box.innerHTML = list.map((L, i) => {
+    const open = levelUnlocked(L), won = levelBeaten(L), best = won ? 100 : progress.best[L.id] || 0;
+    const check = won ? '<svg class="path-check" aria-label="beaten"><use href="#i-check"/></svg>' : '';
+    const info = open
+      ? `<div class="path-bar"><div class="progress"><div class="progress-fill" style="width:${best}%"></div></div><span class="o">${best}%</span></div>`
+      : `<span class="gd-row-meta">BEAT ${esc(list[i - 1].name)} TO UNLOCK</span>`;
+    return `<div class="gd-row path-row${open ? '' : ' locked'}${won ? ' beaten' : ''}">
+      <span class="path-num" aria-hidden="true">${i + 1}</span>
+      <div class="gd-row-main"><span class="gd-row-name">${esc(L.name)}${check}</span>${info}</div>
+      <div class="gd-row-actions">${open
+        ? `<button class="gd-btn" data-play="${esc(L.id)}" aria-label="Play ${esc(L.name)}">PLAY</button>`
+        : '<svg class="path-lock" role="img" aria-label="Locked"><use href="#i-lock"/></svg>'}</div>
+    </div>`;
+  }).join('');
 }
-$('practiceList').addEventListener('click', e => {
+$('pathList').addEventListener('click', e => {
   const b = e.target.closest('[data-play]'); if (!b) return;
-  const L = levels[Number(b.dataset.play)];
-  afterWarning(() => { track('practice-start'); startPlay('practice', { level: L, returnTo: 'practice' }); });
+  const L = pathLevels().find(x => x.id === b.dataset.play);
+  if (!L || !levelUnlocked(L)) return;
+  afterWarning(() => { track('level-start'); startPlay('level', { level: L, returnTo: 'path' }); });
 });
 
 function renderLevelList() {
@@ -4799,7 +4881,7 @@ $('levelList').addEventListener('click', e => {
   const i = Number(b.closest('.gd-row').dataset.i), L = levels[i];
   const act = b.dataset.act;
   if (act === 'edit') edOpen(L);
-  else if (act === 'play') startPlay('practice', { level: L, returnTo: 'levels' });
+  else if (act === 'play') startPlay('level', { level: L, returnTo: 'levels' });
   else if (act === 'code') showTextModal('LEVEL CODE', `Anyone can add "${L.name}" to their editor with Paste level code.`, levelCodeText(L), false);
   else if (act === 'dup') { const c = clone(L); c.id = newId(); c.name = L.name + ' copy'; levels.splice(i + 1, 0, c); saveLevels(); renderLevelList(); }
   else if (act === 'up' || act === 'down') moveLevel(i, act === 'up' ? -1 : 1);
@@ -5210,7 +5292,8 @@ ${settings.editorMode ? `      <dt>TAB</dt><dd>Open or close the dev menu (dev m
       <dt>I</dt><dd>Noclip on or off.</dd>
       <dt>H</dt><dd>Show hitboxes on or off.</dd>
 ` : ''}    </dl>
-    <p>A run is ${LEVELS_PER_RUN} random levels back to back. Crash once and a new run starts with new levels.</p>`,
+    <p>Play the levels in order: beating one unlocks the next. Beat them all to unlock the Random Mix,
+      ${LEVELS_PER_RUN} random levels back to back. Crash once in a mix and a new one starts with new levels.</p>`,
     [{ label: 'OK', primary: true, fn: hideModal }]);
 }
 
@@ -5229,8 +5312,8 @@ function afterWarning(go) {
 }
 
 // buttons
-$('btnPlay').addEventListener('click', () => afterWarning(() => { if (startRun()) track('play-start'); }));
-$('btnPractice').addEventListener('click', () => showScreen('practice'));
+$('btnPlay').addEventListener('click', () => showScreen('path'));
+$('btnMix').addEventListener('click', () => afterWarning(() => { if (startRun()) track('play-start'); }));
 $('btnKey').addEventListener('click', () => { if (settings.editorMode) showHackMenu(true); else showScreen('dungeon'); });
 $('btnHelp').addEventListener('click', showHowToPlay);
 $('btnSettings').addEventListener('click', showGameSettings);
