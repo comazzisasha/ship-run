@@ -122,7 +122,7 @@
       "name": "Does it have practice mode and a level editor?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Yes. Practice lets you replay any level on its own, and the level editor (turn on Dev Mode in Settings) has editor layers, Edit Group, Edit Object, color triggers and testing."
+        "text": "Yes. Practice lets you replay any level on its own, and the level editor (in dev mode) has editor layers, Edit Group, Edit Object, color triggers and testing."
       }
     }
   ]
@@ -227,6 +227,11 @@ h1, h2, h3, p { margin: 0; }
 .corner.br { bottom: 0; right: 0; transform: scale(-1, -1); }
 .menu-corner-right { position: absolute; top: 18px; right: clamp(16px, 3vw, 40px); z-index: 2; display: flex; gap: 18px; }
 .menu-corner-right .round { --r: 74px; }
+/* the dungeon key (bottom left of the menu): opens the dungeon, where dev mode is unlocked */
+.dungeon-key { position: fixed; left: 14px; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); z-index: 3; width: 46px; height: 46px; padding: 4px; border: 0; background: none; cursor: pointer; opacity: .85; transition: transform .14s cubic-bezier(.3,1.7,.5,1); }
+.dungeon-key:hover { opacity: 1; filter: brightness(1.1); }
+.dungeon-key:active { transform: scale(1.15); }
+.dungeon-key svg { width: 100%; height: 100%; overflow: visible; filter: drop-shadow(2px 3px 0 rgba(0, 12, 45, .45)); }
 #btnPlay .tile-icon { animation: playPulse 1.6s ease-in-out infinite; transform-origin: 50% 50%; }
 @keyframes playPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.08); } }
 .tile.blue-face .tile-face { background:
@@ -334,6 +339,14 @@ h1.logo { margin-bottom: 0; font: inherit; }
 .kit-icon:hover { background: rgba(255,255,255,.1); }
 .kit-icon[aria-pressed="true"] { background: rgba(255,255,255,.18); box-shadow: inset 0 0 0 2px rgba(255,255,255,.85); }
 .kit-icon canvas { width: 100%; height: 100%; display: block; }
+.kit-icon.locked canvas { opacity: .3; }
+.kit-icon.locked::after { content: ''; position: absolute; inset: 22% 30%; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M30 46 V34 A20 20 0 0 1 70 34 V46' fill='none' stroke='%23000' stroke-width='22'/%3E%3Cpath d='M30 46 V34 A20 20 0 0 1 70 34 V46' fill='none' stroke='%23d9d9d9' stroke-width='10'/%3E%3Crect x='18' y='44' width='64' height='48' rx='8' fill='%23ffc61f' stroke='%23000' stroke-width='7'/%3E%3C/svg%3E") center / contain no-repeat; pointer-events: none; }
+.rw-list { display: grid; gap: 10px; }
+.rw-row { display: grid; grid-template-columns: 70px minmax(0, 1fr) 90px; gap: 12px; align-items: center; }
+.rw-prev { width: 90px; height: 54px; }
+.path-reward { display: flex; gap: 2px; flex: none; }
+.path-reward canvas { width: 44px; height: 38px; }
+@media (max-width: 520px) { .path-reward { display: none; } }
 .kit-colors { padding: 14px 18px 12px; display: grid; gap: 14px; justify-items: center; }
 .kit-colors[hidden] { display: none; }
 .kit-slots { display: flex; gap: 20px; justify-content: center; align-items: center; }
@@ -366,6 +379,35 @@ h1.logo { margin-bottom: 0; font: inherit; }
   .kit-color { width: 26px; height: 26px; }
   .kit-info { grid-template-columns: auto; }
 }
+
+/* ---------- locked tiles and the level path ---------- */
+.tile { position: relative; }
+.tile-lock { position: absolute; right: -10px; top: -12px; width: 46%; height: 46%; display: none; filter: drop-shadow(3px 4px 0 rgba(0, 12, 45, .4)); }
+.tile.locked .tile-lock { display: block; }
+.tile.locked .tile-face { filter: grayscale(.85) brightness(.75); }
+.gd-row.path-row { flex-wrap: nowrap; }
+.path-row .gd-row-main { flex: 1 1 0; }
+.path-row .gd-row-name { font-size: clamp(18px, 5vw, 24px); overflow-wrap: break-word; }
+.path-num { flex: none; width: 1.6em; font-family: var(--f-gd); font-size: 28px; text-align: center; color: var(--cream); --ow: 2px; }
+.path-bar { display: flex; align-items: center; gap: 10px; max-width: 360px; --u: 1.1px; }
+.path-bar .o { font-family: var(--f-gd); font-size: 15px; min-width: 3.2em; }
+.path-row.beaten .path-num { color: #8dff6a; }
+.path-row.locked .gd-row-name, .path-row.locked .path-num { opacity: .55; }
+.path-lock { width: 44px; height: 44px; flex: none; }
+.path-check { width: 1em; height: 1em; vertical-align: -.1em; margin-left: .3em; }
+
+/* ---------- the dungeon (dev mode unlock) ---------- */
+#scr-dungeon { overflow: auto; background: radial-gradient(ellipse at 50% 35%, #2b2433 0%, #15111b 55%, #060509 100%); }
+#scr-dungeon .page-body { max-width: 560px; justify-items: center; padding-top: clamp(24px, 8vh, 80px); text-align: center; }
+.dg-question { font-family: var(--f-gd); font-size: clamp(26px, 6vw, 44px); line-height: 1.2; color: #e9dcff; --ow: 2.4px; }
+.dg-form { display: flex; gap: 10px; width: 100%; }
+.dg-form .gd-input { flex: 1; font-size: 18px; text-align: center; background: rgba(0, 0, 0, .55); border-color: #6b5a80; }
+.dg-msg { min-height: 1.4em; font: 17px/1.4 var(--f-text); color: #c8b8dd; }
+.dg-msg.bad { color: #ff7a7a; }
+.dg-msg.good { color: #8dff6a; }
+.dg-form.shake { animation: dgShake .4s; }
+@keyframes dgShake { 0%, 100% { transform: none; } 20%, 60% { transform: translateX(-10px); } 40%, 80% { transform: translateX(10px); } }
+@media (prefers-reduced-motion: reduce) { .dg-form.shake { animation: none; } }
 
 /* ---------- pages ---------- */
 .page { overflow: auto; }
@@ -486,6 +528,14 @@ body .toast.over.under { top: auto; bottom: calc(10px + env(safe-area-inset-bott
 .hk-dot.red { background: #ff3b3b; }
 .hud-noclip { font-family: var(--f-gd); font-size: calc(var(--u) * 9); color: #ff6b5c; text-shadow: 0 0 0 #000, 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000; }
 .pause-btn { position: absolute; top: calc(var(--u) * 6); right: calc(var(--u) * 8); --r: calc(var(--u) * 28); pointer-events: auto; }
+.cp-btns { position: absolute; bottom: calc(var(--u) * 8); left: 50%; transform: translateX(-50%); display: flex; gap: calc(var(--u) * 14); pointer-events: auto; }
+.cp-btns .round { --r: calc(var(--u) * 30); box-shadow: 0 0 0 calc(var(--u) * 1.5) #fff; border-width: calc(var(--u) * 2); }
+.cp-btns .round:disabled { opacity: .4; cursor: default; }
+.frame.practice .hud-progress .progress-fill { background: linear-gradient(180deg, #b9fbff, #3fd8f0 55%, #1a9fc4); }
+.path-bar.practice .progress-fill { background: linear-gradient(180deg, #b9fbff, #3fd8f0 55%, #1a9fc4); }
+.path-bar.practice { margin-top: -2px; }
+.path-row .gd-row-actions { flex-direction: column; align-items: stretch; flex: none; }
+.path-row .path-bar { min-width: 0; }
 .pause-btn svg { width: calc(var(--r) * .72); height: calc(var(--r) * .72); }
 .overlay { position: absolute; inset: 0; display: grid; place-items: center; align-content: center; gap: calc(var(--u) * 12); padding: calc(var(--u) * 14); background: rgba(0, 0, 0, .38); cursor: default; }
 .gd-dark { background: rgba(0, 0, 0, .62); border-radius: 22px; }
@@ -1245,6 +1295,24 @@ body .toast.over.under { top: auto; bottom: calc(10px + env(safe-area-inset-bott
     <path d="M28 28 L72 72 M72 28 L28 72" stroke="#000" stroke-width="22" stroke-linecap="round"/>
     <path d="M28 28 L72 72 M72 28 L28 72" stroke="#fff" stroke-width="10" stroke-linecap="round"/>
   </symbol>
+  <symbol id="i-key" viewBox="0 0 100 100">
+    <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="30" cy="30" r="17" stroke="#000" stroke-width="20"/>
+      <path d="M42 42 L84 84 M64 64 L74 54 M76 76 L86 66" stroke="#000" stroke-width="20"/>
+      <circle cx="30" cy="30" r="17" stroke="url(#g-gold)" stroke-width="10"/>
+      <path d="M42 42 L84 84 M64 64 L74 54 M76 76 L86 66" stroke="url(#g-gold)" stroke-width="10"/>
+    </g>
+  </symbol>
+  <symbol id="i-check" viewBox="0 0 30 30">
+    <path d="M5 15.5 L12 22.5 L25.5 6.5" fill="none" stroke="#000" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M5 15.5 L12 22.5 L25.5 6.5" fill="none" stroke="#6dff3a" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/>
+  </symbol>
+  <symbol id="i-lock" viewBox="0 0 100 100">
+    <path d="M30 46 V34 A20 20 0 0 1 70 34 V46" fill="none" stroke="#000" stroke-width="22"/>
+    <path d="M30 46 V34 A20 20 0 0 1 70 34 V46" fill="none" stroke="#d9d9d9" stroke-width="10"/>
+    <rect x="18" y="44" width="64" height="48" rx="8" fill="url(#g-gold)" stroke="#000" stroke-width="7"/>
+    <path d="M50 60 V74" stroke="#000" stroke-width="9" stroke-linecap="round"/>
+  </symbol>
   <symbol id="i-corner" viewBox="0 0 140 140">
     <path d="M-6 -6 H126 V18 H96 V34 H56 V56 H34 V96 H18 V126 H-6 Z" transform="translate(7 8)" fill="#001640" opacity=".45"/>
     <path d="M-6 -6 H126 V18 H96 V34 H56 V56 H34 V96 H18 V126 H-6 Z" fill="#fff" stroke="#fff" stroke-width="10" stroke-linejoin="round"/>
@@ -1287,16 +1355,15 @@ body .toast.over.under { top: auto; bottom: calc(10px + env(safe-area-inset-bott
       <button class="tile pink-face" id="btnIcons" aria-label="Icon kit: pick your cube, ship and colors">
         <span class="tile-face"><canvas class="tile-icon" id="kitTileIcon" aria-hidden="true"></canvas><span class="tile-label" data-fit>ICONS</span></span>
       </button>
-      <button class="tile" id="btnPlay" aria-label="Play a random run">
+      <button class="tile" id="btnPlay" aria-label="Play the levels">
         <span class="tile-face"><svg class="tile-icon" aria-hidden="true"><use href="#i-play"/></svg><span class="tile-label" data-fit>PLAY</span></span>
       </button>
-      <button class="tile blue-face" id="btnPractice" aria-label="Practice one level">
-        <span class="tile-face"><svg class="tile-icon" aria-hidden="true"><use href="#i-practice"/></svg><span class="tile-label" data-fit>PRACTICE</span></span>
-      </button>
-      <button class="tile orange-face" id="btnEditor" aria-label="Level editor" hidden>
-        <span class="tile-face"><svg class="tile-icon" aria-hidden="true"><use href="#i-tools"/></svg><span class="tile-label" data-fit>EDITOR</span></span>
+      <button class="tile orange-face" id="btnMix" aria-label="Random mix">
+        <span class="tile-face"><svg class="tile-icon" aria-hidden="true"><use href="#i-shuffle"/></svg><span class="tile-label" data-fit>RANDOM MIX</span></span>
+        <svg class="tile-lock" aria-hidden="true"><use href="#i-lock"/></svg>
       </button>
     </div>
+    <button class="dungeon-key" id="btnKey" aria-label="A key" title="A key"><svg aria-hidden="true"><use href="#i-key"/></svg></button>
     <footer class="menu-foot">
       <p id="menuNote"></p>
       <p class="keys">Hold Space, Up, the mouse button or your finger to fly. Esc pauses.</p>
@@ -1309,8 +1376,8 @@ body .toast.over.under { top: auto; bottom: calc(10px + env(safe-area-inset-bott
           play Geometry Dash-style levels online right here, with no download, no install and no login.</p>
         <h2>How to play</h2>
         <p>Hold Space, the Up arrow, the mouse button or your finger to fly the ship up, and let go to fall. Press Esc to pause.
-          <b>Play</b> starts a random run of 5 levels back to back; crash once and a new run starts. <b>Practice</b> mode lets
-          you replay any single level as many times as you like and collect its user coins.</p>
+          <b>Play</b> opens the levels, from easiest to hardest: beat one to unlock the next, and collect its user coins.
+          Beat them all to unlock the <b>Random Mix</b>: 5 random levels back to back, where one crash starts a new mix.</p>
         <h2>Features</h2>
         <ul>
           <li>Ship mode levels inspired by Clubstep, Clutterfunk, Cycles, ElectroDynamix, Nightmare, Necropolis and more.</li>
@@ -1328,7 +1395,7 @@ body .toast.over.under { top: auto; bottom: calc(10px + env(safe-area-inset-bott
           <dt>Do I need to download anything?</dt><dd>No. Ship Run is an HTML5 browser game, so there is no download, install, extension or login. It works in Chrome, Edge, Firefox and Safari.</dd>
           <dt>Can I play on a Chromebook, PC, Mac or phone?</dt><dd>Yes. Ship Run runs in the browser on Chromebooks, Windows PCs, Macs, iPhones, iPads and Android phones and tablets.</dd>
           <dt>Is Ship Run Geometry Dash unblocked?</dt><dd>Ship Run runs straight from ship-run.world with no download or extension, so you can play wherever that site opens. Whether a school or work network allows it depends on that network's rules.</dd>
-          <dt>Does it have practice mode and a level editor?</dt><dd>Yes. Practice lets you replay any level on its own, and the level editor (turn on Dev Mode in Settings) has editor layers, Edit Group, Edit Object, color triggers and testing.</dd>
+          <dt>Does it have practice mode and a level editor?</dt><dd>Yes. Practice lets you replay any level on its own, and the level editor (in dev mode) has editor layers, Edit Group, Edit Object, color triggers and testing.</dd>
         </dl>
         <p>New to it? Read <a href="how-to-play.html">how to play Ship Run: Geometry Dash ship mode controls, portals, practice mode and the level editor</a>.</p>
         <p><a href="privacy.html">Privacy Policy</a> · <a href="terms.html">Terms of Use</a></p>
@@ -1383,20 +1450,33 @@ body .toast.over.under { top: auto; bottom: calc(10px + env(safe-area-inset-bott
       by GD Colon. The icons and colors are from Geometry Dash and belong to RobTop Games.</p>
   </section>
 
-  <section id="scr-practice" class="screen page" hidden>
+  <section id="scr-dungeon" class="screen page" hidden>
+    <header class="gd-head">
+      <button class="back-btn" data-go="menu" aria-label="Back to menu"><svg><use href="#i-back"/></svg></button>
+    </header>
+    <div class="page-body">
+      <h2 class="dg-question o" id="dgQuestion">WHAT IS YOUR NAME?</h2>
+      <form class="dg-form" id="dgForm" autocomplete="off">
+        <input class="gd-input" id="dgName" type="text" maxlength="40" spellcheck="false" autocapitalize="off" autocorrect="off" aria-labelledby="dgQuestion">
+        <button class="gd-btn" type="submit">ENTER</button>
+      </form>
+      <p class="dg-msg" id="dgMsg" role="status"></p>
+    </div>
+  </section>
+
+  <section id="scr-path" class="screen page" hidden>
     <svg class="corner tl" aria-hidden="true"><use href="#i-corner"/></svg>
     <svg class="corner tr" aria-hidden="true"><use href="#i-corner"/></svg>
     <svg class="corner bl" aria-hidden="true"><use href="#i-corner"/></svg>
     <svg class="corner br" aria-hidden="true"><use href="#i-corner"/></svg>
     <header class="gd-head">
       <button class="back-btn" data-go="menu" aria-label="Back to menu"><svg><use href="#i-back"/></svg></button>
-      <h2><span class="gold" data-fit>PRACTICE</span></h2>
+      <h2><span class="gold" data-fit>LEVELS</span></h2>
     </header>
     <div class="page-body">
-      <p class="page-note">Play one level on its own. Crashing restarts just that level.</p>
+      <p class="page-note" id="pathNote">Beat a level to unlock the next one. Practice drops checkpoints as you fly, but only a normal run counts.</p>
       <div class="gd-list">
-        <div class="gd-list-head"><span class="gold">LEVELS</span></div>
-        <div id="practiceList"></div>
+        <div id="pathList"></div>
       </div>
     </div>
   </section>
@@ -1446,6 +1526,10 @@ body .toast.over.under { top: auto; bottom: calc(10px + env(safe-area-inset-bott
             <div class="hud-labels o" id="hudLabels"></div>
           </div>
           <button class="round dark pause-btn" id="btnPause" aria-label="Pause"><svg><use href="#i-pause"/></svg></button>
+          <div class="cp-btns" id="cpBtns" hidden>
+            <button class="round cyan" id="cpPlace" aria-label="Place a checkpoint (Z)"><svg aria-hidden="true"><use href="#i-practice"/></svg></button>
+            <button class="round gray" id="cpRemove" aria-label="Remove the last checkpoint (X)"><svg aria-hidden="true"><use href="#i-x"/></svg></button>
+          </div>
         </div>
         <div class="overlay" id="overlay" hidden></div>
       </div>

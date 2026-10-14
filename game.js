@@ -3,7 +3,7 @@
    SHIP RUN  -  game.js
 
    1. Settings                 7. Drawing
-   2. Your CMU constants       8. Playing (random run / practice / editor test)
+   2. Your CMU constants       8. Playing (levels / random mix / editor test)
    3. Geometry helpers         9. Saving levels (browser + levels.js)
    4. Objects                 10. Level editor
    5. Player (your physics)   11. Menus and start-up
@@ -21,6 +21,13 @@
 
 const GAME_TITLE = 'Ship Run';
 const LEVELS_PER_RUN = 5;      // how many random levels make one run
+// Icons you earn for more than one level. Each level's own reward is part of the level
+// (Level editor > REWARD, saved in levels.js). An icon that is anyone's reward is locked in
+// the icon kit until it's earned; every other icon is free. Leave a part out for no icon.
+const BONUS_REWARDS = {
+  allLevels: { ship: 46, cube: 142 },   // for beating every level
+  mix: { ship: 79, cube: 248 },          // for finishing a Random Mix
+};
 const VIEW_WIDTH = 640;        // width of the game view in pixels (CMU was 400). Height is always 400.
 const SHIP_SCREEN_X = Math.round(VIEW_WIDTH / 3);   // where the middle of the ship is drawn, in pixels from the left edge
 
@@ -831,6 +838,7 @@ class World {
     // triggers that fire when the ship passes them, in the order it reaches them
     this.xTriggers = this.triggers.filter(o => !o.touch && !o.spawn).sort((a, b) => a.tx - b.tx || a.idx - b.idx);
     this.nextTrigger = 0;
+    this.fired = [];      // triggers in the order they fired (practice checkpoints replay them)
   }
   firstAtLeast(x) {
     let lo = 0, hi = this.cxs.length;
@@ -865,6 +873,7 @@ class World {
     }
     for (const p of this.parts) p.colors.reset();
     this.nextTrigger = 0;
+    this.fired = [];
   }
 }
 
@@ -1779,8 +1788,8 @@ function sizeCanvas(cv, cssW, cssH) {
 
 
 // ===== 8. PLAYING ==========================================================
-// mode 'run'      = random run of LEVELS_PER_RUN levels, crashing reshuffles
-// mode 'practice' = one level, crashing restarts it
+// mode 'run'      = random mix of LEVELS_PER_RUN levels, crashing reshuffles
+// mode 'level'    = one level, crashing restarts it (in practice: from the last checkpoint)
 // mode 'test'     = one level from the editor, Esc goes back to the editor
 
 const $ = id => document.getElementById(id);
@@ -1798,9 +1807,72 @@ function track(name) {
 }
 // Passing the end of a level in a run or in Practice (not editor tests or plays)
 function trackLevelDone(pi) {
-  if (game.mode === 'test' || game.returnTo === 'levels' || game.cheated) return;   // runs with hacks don't count
+  if (game.mode === 'test' || game.returnTo === 'levels' || game.cheated || game.practice) return;   // runs with hacks don't count
   const part = world.parts[pi];
   if (part) track('level-complete:' + part.id);
+}
+
+// --- progress: which levels are beaten, and the best % on each, kept in this browser ---
+// The levels are played in the order of the levels list. A level is unlocked once the one
+// before it is beaten (or it was beaten itself). Beating all of them unlocks the random mix.
+const PROGRESS_KEY = 'shiprun.progress.v1';
+const progress = (() => {
+  const p = { beaten: {}, best: {}, practice: {}, mixDone: false };
+  try {
+    const d = JSON.parse(localStorage.getItem(PROGRESS_KEY) || '{}');
+    if (isOpts(d.beaten)) for (const k in d.beaten) if (d.beaten[k]) p.beaten[k] = true;
+    p.mixDone = !!d.mixDone;
+    for (const m of ['best', 'practice']) if (isOpts(d[m])) for (const k in d[m]) { const v = Math.floor(Number(d[m][k])); if (v > 0) p[m][k] = Math.min(100, v); }
+  } catch (e) { /* storage blocked: nothing beaten */ }
+  return p;
+})();
+function saveProgress() { try { localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress)); } catch (e) { /* ignore */ } }
+const pathLevels = () => levels.filter(L => L.objects.length);
+const levelBeaten = L => !!progress.beaten[L.id];
+function levelUnlocked(L) {
+  if (hk('unlockLevels') || levelBeaten(L)) return true;
+  const list = pathLevels(), i = list.indexOf(L);
+  return i <= 0 || levelBeaten(list[i - 1]);
+}
+const mixUnlocked = () => hk('unlockLevels') || pathLevels().every(levelBeaten);
+// Only a level played from the level path counts: not the editor, and not with hacks or Safe Mode on.
+// Practice keeps its own best %, and never beats a level.
+const countsForProgress = () => game.mode === 'level' && game.returnTo === 'path' && !game.cheated && !hk('safeMode');
+function noteBest(pct) {
+  if (!countsForProgress()) return false;
+  const id = game.level.id, map = game.practice ? progress.practice : progress.best;
+  if (pct <= (map[id] || 0)) return false;
+  map[id] = pct; saveProgress();
+  return true;
+}
+// --- icon rewards ---
+// Every reward: what it's for, the icon, and whether it's been earned
+function iconRewards() {
+  const out = [], add = (r, why, earned) => { if (r) for (const form of ['ship', 'cube']) if (r[form]) out.push({ form, id: r[form], why, earned }); };
+  for (const L of pathLevels()) add(L.reward, 'Beat ' + L.name, levelBeaten(L));
+  add(BONUS_REWARDS.allLevels, 'Beat every level', pathLevels().length > 0 && pathLevels().every(levelBeaten));
+  add(BONUS_REWARDS.mix, 'Finish a Random Mix', progress.mixDone);
+  return out;
+}
+// null when the icon can be picked, otherwise how to unlock it ("Beat Cycles Ship")
+function iconLock(form, id) {
+  if (hk('unlockIcons')) return null;
+  const rs = iconRewards().filter(r => r.form === form && r.id === id);
+  return !rs.length || rs.some(r => r.earned) ? null : rs.map(r => r.why).join(' or ');
+}
+const earnedIcons = () => new Set(iconRewards().filter(r => r.earned).map(r => r.form + r.id));
+function newIconsSince(before) { return iconRewards().filter(r => r.earned && !before.has(r.form + r.id)).filter((r, i, a) => a.findIndex(x => x.form === r.form && x.id === r.id) === i); }
+
+// Marks the level beaten. Returns what it unlocked: { next, mix }
+function noteBeaten() {
+  const out = { next: null, mix: false };
+  if (!countsForProgress() || game.practice || levelBeaten(game.level)) return out;
+  const mixBefore = pathLevels().every(levelBeaten);
+  progress.beaten[game.level.id] = true; saveProgress();
+  const list = pathLevels(), next = list[list.indexOf(game.level) + 1];
+  if (next && !levelBeaten(next)) out.next = next;
+  out.mix = !mixBefore && list.every(levelBeaten);
+  return out;
 }
 
 // --- the Pusab font (used for text drawn on the canvas, like "Attempt 3") ---
@@ -1829,7 +1901,8 @@ const game = {
   deathHitboxes: false, teleported: false,
   prevScroll: 0, prevY: position, prevTheta: 0, trail: [], lastTrail: null,
   cssScale: 1, dpr: 1, hudKey: '', attemptX: 0,
-  time: 0, coinPart: 0, cheated: false, runCoins: 0, stage: null,
+  time: 0, coinPart: 0, cheated: false, runCoins: 0, stage: null, unlocked: null, newBest: false,
+  practice: false, checkpoints: [], cpNext: 0, cpPending: null, newIcons: [],
   nc: { steps: 0, dead: 0, deaths: 0, was: false }, clicks: 0,
 };
 const gameCanvas = $('game'), gameCtx = gameCanvas.getContext('2d');
@@ -1840,6 +1913,7 @@ function startPlay(mode, opts = {}) {
   game.level = opts.level || null;
   game.startScroll = opts.startScroll || 0;
   game.returnTo = opts.returnTo || 'menu';
+  game.practice = !!opts.practice && mode === 'level';
   game.attempts = 0;
   game.lastTrail = null;
   game.paused = false;
@@ -1863,6 +1937,7 @@ function restart() {
   game.prevScroll = scrollX; game.prevY = Me.y; game.prevTheta = Me.theta;
   game.nc = { steps: 0, dead: 0, deaths: 0, was: false }; game.clicks = 0;
   game.time = 0; game.coinPart = world.partAt(shipCenterX + scrollX); game.cheated = cheatsOn(); game.runCoins = 0; game.stage = null;
+  game.checkpoints = []; game.cpNext = CP_EVERY; game.cpPending = null;
   // Testing from the middle: triggers behind the ship have already happened (no fade)
   const sx0 = shipCenterX + scrollX, xt = world.xTriggers;
   while (world.nextTrigger < xt.length && xt[world.nextTrigger].tx < sx0) fireTrigger(xt[world.nextTrigger++], 0, true);
@@ -1870,9 +1945,93 @@ function restart() {
   updateHud(true);
 }
 
+// --- practice mode: checkpoints (the green diamonds) ---
+// A checkpoint is everything that can change while you fly: where the ship is, how it's
+// moving, its speed, size and gravity, which portals, orbs and triggers were used, and the
+// game time (color fades are timed from it). Crashing goes back to the last one.
+// One is placed automatically every CP_EVERY seconds, but only kept once the ship has
+// lived CP_SAFE seconds more, so it never lands right before a crash. Z places one, X removes the last.
+const CP_EVERY = 2, CP_SAFE = 1;
+function takeCheckpoint() {
+  return {
+    scroll: scrollX, speed: currentSpeed, time: game.time,
+    me: { y: Me.y, vy: Me.vy, theta: Me.theta, onGround: Me.onGround, gravity: Me.gravity, size: Me.size },
+    used: world.objects.filter(o => 'used' in o && o.used),
+    fired: world.fired.slice(), nextTrigger: world.nextTrigger,
+  };
+}
+function addCheckpoint(cp) {
+  game.checkpoints.push(cp || takeCheckpoint());
+  updateHud(true);
+}
+function removeCheckpoint() {
+  if (!game.practice || !game.checkpoints.length) return;
+  game.checkpoints.pop();
+  game.cpPending = null; game.cpNext = game.time + CP_EVERY;
+  updateHud(true);
+}
+function placeCheckpoint() {
+  if (!game.practice || !Me.alive || game.dead || game.finished || game.paused) return;
+  addCheckpoint();
+  game.cpPending = null; game.cpNext = game.time + CP_EVERY;
+}
+// After each step: the automatic checkpoints
+function practiceStep() {
+  if (!game.practice || !Me.alive) return;
+  if (game.cpPending && game.time >= game.cpPending.time + CP_SAFE) { addCheckpoint(game.cpPending); game.cpPending = null; }
+  if (!game.cpPending && game.time >= game.cpNext) { game.cpPending = takeCheckpoint(); game.cpNext = game.time + CP_EVERY; }
+}
+// Crashing in practice: back to the last checkpoint, or the start when there is none
+function respawn() {
+  const cp = game.practice && game.checkpoints[game.checkpoints.length - 1];
+  if (!cp) { restart(); return; }
+  world.reset();
+  for (const o of cp.used) o.used = true;
+  for (const o of cp.fired) fireTrigger(o, 0, true);
+  world.nextTrigger = cp.nextTrigger;
+  scrollX = cp.scroll; currentSpeed = cp.speed; game.time = cp.time;
+  Me.reset();
+  Me.setSize(cp.me.size);
+  Object.assign(Me, { y: cp.me.y, vy: cp.me.vy, theta: cp.me.theta, onGround: cp.me.onGround, gravity: cp.me.gravity });
+  Me.syncHitbox(); Me.render();
+  game.deathHitboxes = false;
+  game.dead = false; game.finished = false; game.paused = false; game.acc = 0;
+  game.attempts++;
+  game.attemptX = scrollX + shipCenterX + 150;
+  game.prevScroll = scrollX; game.prevY = Me.y; game.prevTheta = Me.theta;
+  game.nc = { steps: 0, dead: 0, deaths: 0, was: false };
+  game.coinPart = world.partAt(shipCenterX + scrollX); game.cheated = cheatsOn(); game.stage = null;
+  game.cpPending = null; game.cpNext = game.time + CP_EVERY;
+  hideOverlay();
+  updateHud(true);
+}
+// The pause menu's PRACTICE / NORMAL switch
+function togglePractice() {
+  if (game.mode !== 'level' || game.returnTo !== 'path') return;
+  game.practice = !game.practice;
+  if (game.practice) {
+    track('practice-start');
+    game.checkpoints = []; game.cpPending = null; game.cpNext = game.time + CP_EVERY;
+    if (Me.alive) addCheckpoint();     // start practicing from right here
+    resumeGame();
+  } else { game.attempts = 0; restart(); }
+}
+function drawCheckpoints(ctx, camL) {
+  if (!game.practice) return;
+  for (const cp of game.checkpoints) {
+    const x = cp.scroll + shipCenterX;
+    if (x < camL - 30 || x > camL + VIEW_WIDTH + 30) continue;
+    const cy = screenHeight - cp.me.y - gridSize * (cp.me.size === 'mini' ? miniScale : 1) / 2, r = 9;
+    ctx.beginPath(); ctx.moveTo(x, cy - r); ctx.lineTo(x + r, cy); ctx.lineTo(x, cy + r); ctx.lineTo(x - r, cy); ctx.closePath();
+    ctx.fillStyle = '#3cff6a'; ctx.strokeStyle = '#000'; ctx.lineWidth = 2.5;
+    ctx.fill(); ctx.stroke();
+  }
+}
+
 // --- color triggers, alpha triggers and coins (they never change how the ship moves) ---
 function fireTrigger(o, now, instant) {
   o.fired = true;
+  world.fired.push(o);
   const cs = world.parts[o.part].colors, fade = instant ? 0 : o.fadeTime;
   if (o.t === 'ColorTrigger') cs.set(o.target, o.spec, now, fade);
   else if (o.group) cs.setGroup(o.group, o.opacity, now, fade);
@@ -1893,7 +2052,7 @@ function playSpecials() {
   while (game.coinPart < pi) { trackLevelDone(game.coinPart); keepCoins(game.coinPart++); }
 }
 function keepCoins(pi) {
-  if (game.mode === 'test' || game.cheated || hk('safeMode')) return;
+  if (game.mode === 'test' || game.cheated || game.practice || hk('safeMode')) return;
   const part = world.parts[pi];
   if (!part) return;
   for (const o of world.coins) if (o.part === pi && o.got) saveCoin(part.id, o.key);
@@ -1921,6 +2080,7 @@ function step() {
   playSpecials();
   Move(currentSpeed);
   game.time += dt;
+  practiceStep();
   if (!Me.alive) onDeath();
   else if (shipCenterX + scrollX >= world.endPx) onFinish();
 }
@@ -1929,6 +2089,7 @@ function onDeath() {
   game.dead = true;
   game.deathHitboxes = hk('deathHitboxes');   // setHitboxes(True)
   game.deathTimer = hk('instantRespawn') ? 0 : 0.5 + dt;   // sleep(0.5) on the next step, then restart()
+  noteBest(currentPct());
   if (game.mode === 'test') game.lastTrail = { pts: game.trail, died: true };
 }
 
@@ -1936,6 +2097,12 @@ function onFinish() {
   game.finished = true;
   releaseInput();
   while (game.coinPart < world.parts.length) { trackLevelDone(game.coinPart); keepCoins(game.coinPart++); }
+  const iconsBefore = earnedIcons();
+  game.newBest = noteBest(100);
+  game.unlocked = noteBeaten();
+  if (game.mode === 'run' && !game.cheated && !hk('safeMode') && !progress.mixDone) { progress.mixDone = true; saveProgress(); }
+  game.newIcons = hk('unlockIcons') ? [] : newIconsSince(iconsBefore);
+  if (game.unlocked.mix) track('mix-unlocked');
   if (game.mode === 'test') {
     game.lastTrail = { pts: game.trail, died: false };
     leavePlay('Reached the end of the level.');
@@ -1958,6 +2125,7 @@ function leavePlay(message) {
 
 function startRun() {
   const pool = randomizerPool();
+  if (!mixUnlocked()) { toast('Beat every level to unlock the Random Mix.'); return false; }
   if (!pool.length) { toast('No levels are in random runs yet. Turn it on in the level editor.'); return false; }
   startPlay('run', { pool, returnTo: 'menu' });
   return true;
@@ -1999,8 +2167,10 @@ function showPauseMenu() {
       <div class="pause-bar"><div class="progress"><div class="progress-fill" style="width:${pct}%"></div></div><span class="o">${pct}%</span></div>
       <div class="round-row">
         ${roundBtn('resume', 'green', 'i-tri', 'RESUME')}
-        ${roundBtn('restart', 'green', 'i-restart', game.mode === 'run' ? 'NEW RUN' : 'RESTART')}
+        ${roundBtn('restart', 'green', 'i-restart', game.mode === 'run' ? 'NEW MIX' : 'RESTART')}
         ${roundBtn('quit', 'green', 'i-menu', game.mode === 'run' ? 'MENU' : 'BACK')}
+        ${game.mode === 'level' && game.returnTo === 'path' ? roundBtn('practice', 'cyan', 'i-practice', game.practice ? 'NORMAL' : 'PRACTICE') : ''}
+        ${settings.editorMode ? roundBtn('dev', 'blue', 'i-key', 'DEV') : ''}
       </div>
     </div>`);
 }
@@ -2011,15 +2181,35 @@ function coinLine() {
   const dots = world.coins.slice().sort((a, b) => a.X - b.X).map(o => `<i class="coin-dot${o.got ? ' got' : ''}"></i>`).join('');
   return `<span class="done-line o coin-line">COINS: ${dots}</span>${game.cheated ? '<span class="done-line o small">HACKS WERE ON, SO COINS WERE NOT SAVED</span>' : ''}`;
 }
+// The next level on the level path, if it's open to play
+function nextPathLevel() {
+  if (game.mode !== 'level' || game.returnTo !== 'path') return null;
+  const list = pathLevels(), next = list[list.indexOf(game.level) + 1];
+  return next && levelUnlocked(next) ? next : null;
+}
+function unlockLines() {
+  const u = game.unlocked || {};
+  let out = '';
+  if (u.next) out += `<span class="done-line o gold">NEW LEVEL UNLOCKED: ${esc(u.next.name)}</span>`;
+  if (u.mix) out += `<span class="done-line o gold">RANDOM MIX UNLOCKED!</span>`;
+  const got = game.newIcons || [], n = f => got.filter(r => r.form === f).length;
+  if (got.length) out += `<span class="done-line o gold">NEW ${['ship', 'cube'].filter(n).map(f => n(f) > 1 ? n(f) + ' ' + f.toUpperCase() + 'S' : f.toUpperCase()).join(' AND ')} UNLOCKED!</span>`;
+  if (game.practice && !levelBeaten(game.level)) out += '<span class="done-line o small">NOW BEAT IT IN NORMAL MODE TO UNLOCK THE NEXT LEVEL</span>';
+  if (!out && game.mode === 'level' && game.returnTo === 'path' && (game.cheated || hk('safeMode'))) out = '<span class="done-line o small">HACKS WERE ON, SO THIS DOESN\'T COUNT</span>';
+  return out;
+}
 function showComplete() {
-  const run = game.mode === 'run';
-  showOverlay(`<span class="done-title gold" data-fit>${run ? 'RUN COMPLETE!' : 'LEVEL COMPLETE!'}</span>
+  const run = game.mode === 'run', next = nextPathLevel();
+  showOverlay(`<span class="done-title gold" data-fit>${run ? 'MIX COMPLETE!' : game.practice ? 'PRACTICE COMPLETE!' : 'LEVEL COMPLETE!'}</span>
     <div class="done-card gd-dark">
       <span class="done-line o">${run ? world.parts.length + ' RANDOM LEVELS' : esc(game.level.name)}</span>
       <span class="done-line o">ATTEMPTS: ${game.attempts}</span>
       ${coinLine()}
+      ${unlockLines()}
       <div class="round-row">
-        ${roundBtn('again', 'green', 'i-restart', run ? 'NEW RUN' : 'AGAIN')}
+        ${roundBtn('again', 'green', 'i-restart', run ? 'NEW MIX' : 'AGAIN')}
+        ${game.practice ? roundBtn('normal', 'green', 'i-tri', 'NORMAL MODE') : ''}
+        ${next && !game.practice ? roundBtn('next', 'green', 'i-tri', 'NEXT') : ''}
         ${roundBtn('quit', 'green', 'i-menu', run ? 'MENU' : 'BACK')}
       </div>
     </div>`);
@@ -2031,7 +2221,11 @@ $('overlay').addEventListener('click', e => {
   if (act === 'resume') resumeGame();
   else if (act === 'restart') restart();
   else if (act === 'again') { if (game.mode === 'run') startRun(); else { game.attempts = 0; restart(); } }
+  else if (act === 'normal') { game.practice = false; game.attempts = 0; restart(); }
   else if (act === 'quit') leavePlay();
+  else if (act === 'next') { const L = nextPathLevel(); if (L) { track('level-start'); startPlay('level', { level: L, returnTo: 'path' }); } }
+  else if (act === 'dev') showHackMenu(true);
+  else if (act === 'practice') togglePractice();
 });
 
 function fitGameCanvas() {
@@ -2081,6 +2275,7 @@ function drawGame() {
   for (const o of vis) (o.zRank >= Z_FRONT ? front : behind).push(o);
   fadeShipX = layout ? null : wx;
   drawObjects(ctx, behind, 'back');
+  drawCheckpoints(ctx, camL);
   if (!hk('hidePlayer')) drawPlayer(ctx, wx, yI, thI, Me.sizeScale, Me.gravity, upInput && Me.alive);
   drawPortalFronts(ctx, behind);
   if (front.length) drawObjects(ctx, front);
@@ -2126,8 +2321,9 @@ function runLabel() {
 }
 function updateHud(force) {
   const pct = currentPct();
-  const label = game.mode === 'run' ? runLabel() : game.mode === 'test' ? 'TESTING: ' + (game.level ? game.level.name : '') : (game.level ? game.level.name : '');
-  const key = pct + '|' + label + '|' + hk('noclip') + '|' + hk('hidePause') + '|' + game.mode;
+  let label = game.mode === 'run' ? runLabel() : game.mode === 'test' ? 'TESTING: ' + (game.level ? game.level.name : '') : (game.level ? game.level.name : '');
+  if (game.practice) label = 'PRACTICE: ' + label;
+  const key = pct + '|' + label + '|' + hk('noclip') + '|' + hk('hidePause') + '|' + game.mode + '|' + game.checkpoints.length;
   if (!force && key === game.hudKey) return;
   game.hudKey = key;
   $('progFill').style.width = pct + '%';
@@ -2136,6 +2332,9 @@ function updateHud(force) {
   $('badgeNoclip').hidden = !hk('noclip');
   $('btnPause').hidden = hk('hidePause');
   $('btnPause').setAttribute('aria-label', game.mode === 'test' ? 'Back to the editor' : 'Pause');
+  $('cpBtns').hidden = !game.practice;
+  $('cpRemove').disabled = !game.checkpoints.length;
+  $('frame').classList.toggle('practice', game.practice);
   applyHudSettings();
 }
 function applyHudSettings() {
@@ -2146,13 +2345,20 @@ function applyHudSettings() {
 }
 
 
-// --- the hack menu (dev mode only): Tab opens it, Tab again closes it ---
+// --- the dev menu (dev mode only): Tab opens it, Tab again closes it ---
+// Also opened by the key on the main menu or DEV on the pause menu, once dev mode is on.
 // Like Mega Hack: a few windows of switches you can drag around. Everything is
 // kept in this browser. With dev mode off no hack does anything (Hitboxes on
 // Death keeps its normal "on"), and the menu can't be opened.
 const HACKS_KEY = 'shiprun.hacks.v1';
 const HACK_DEFAULTS = { deathHitboxes: true };
 const HACK_WINDOWS = [
+  { id: 'dev', name: 'Dev', color: '#e0a800', items: [
+    { act: 'editor', label: 'Level Editor', desc: 'Make levels, and set the order they are played in.' },
+    ['unlockIcons', 'Unlock All Icons', 'Every icon in the icon kit can be picked. Your real unlocks are kept.'],
+    ['unlockLevels', 'Unlock All Levels', 'Every level and the random mix can be played, without beating the ones before. Your real progress is kept.'],
+    { act: 'lockDev', label: 'Lock Dev Mode', desc: 'Turns dev mode off in this browser. The key on the main menu unlocks it again.' },
+  ] },
   { id: 'player', name: 'Player', color: '#e8457c', items: [
     ['noclip', 'Noclip', 'Spikes and blocks can\'t kill you. Shortcut: I.'],
     ['ncAcc', 'Noclip Accuracy', 'With noclip on, shows how much of the attempt you spent NOT inside something deadly.'],
@@ -2184,7 +2390,7 @@ const HACK_WINDOWS = [
     ['clock', 'Clock', 'The time of day.'],
   ] },
   { id: 'universal', name: 'Universal', color: '#ff9d2e', items: [
-    ['safeMode', 'Safe Mode', 'Never saves coins, even with no other hack on.'],
+    ['safeMode', 'Safe Mode', 'Never saves coins or progress, even with no other hack on.'],
     { act: 'resetLayout', label: 'Reset Windows', desc: 'Puts the hack windows back in their starting places.' },
     { act: 'allOff', label: 'Turn Everything Off', desc: 'Turns every hack off (Hitboxes on Death goes back on).' },
   ] },
@@ -2209,6 +2415,9 @@ function cheatsOn() { return GAMEPLAY_HACKS.some(id => id === 'speedhack' ? hack
 function setHack(id, v) {
   hacks.on[id] = v; saveHacks();
   if (screen === 'play') updateHud(true);
+  if (screen === 'menu') renderMenuNote();
+  if (screen === 'path') renderPath();
+  if (screen === 'icons') renderKit();
   renderHackMenu();
 }
 
@@ -2220,7 +2429,7 @@ function showHackMenu(open = !hackMenuOpen()) {
     if (!open) return;
     m = document.createElement('div');
     m.id = 'hackMenu'; m.hidden = true;
-    m.setAttribute('role', 'dialog'); m.setAttribute('aria-label', 'Hack menu');
+    m.setAttribute('role', 'dialog'); m.setAttribute('aria-label', 'Dev menu');
     document.body.appendChild(m);
     hackMenuEvents(m);
   }
@@ -2241,7 +2450,7 @@ function renderHackMenu() {
   if (!m || m.hidden) return;
   const focused = document.activeElement && m.contains(document.activeElement) && document.activeElement.dataset.hin;
   if (!m.children.length) {
-    m.innerHTML = `<p class="hk-hint">HACK MENU · TAB TO CLOSE · DRAG THE TITLES TO MOVE</p>` + HACK_WINDOWS.map(w =>
+    m.innerHTML = `<p class="hk-hint">DEV MENU · TAB OR ESC TO CLOSE · DRAG THE TITLES TO MOVE</p>` + HACK_WINDOWS.map(w =>
       `<section class="hk-win" data-win="${w.id}" style="--hk:${w.color}"><h2 class="hk-head">${w.name}</h2><div class="hk-body"></div></section>`).join('');
   }
   for (const w of HACK_WINDOWS) {
@@ -2272,6 +2481,8 @@ function placeHackWindows(reset) {
 }
 function hackAction(act) {
   if (act === 'resetLayout') { placeHackWindows(true); return; }
+  if (act === 'editor') { openEditorFromDevMenu(); return; }
+  if (act === 'lockDev') { lockDevMode(); return; }
   if (act === 'allOff') { hacks.on = { ...HACK_DEFAULTS }; saveHacks(); if (screen === 'play') updateHud(true); renderHackMenu(); toast('All hacks are off.'); return; }
   if (screen !== 'play' || game.finished) { toast('Start a level first.'); return; }
   if (act === 'restart') { if (game.paused) hideOverlay(); restart(); }
@@ -2373,7 +2584,7 @@ let usingLocal = false;
 let levels = loadLevels();
 
 function canon(list) {
-  return list.map(L => ({ id: L.id, name: L.name, randomizer: !!L.randomizer, end: L.end > 0 ? L.end : null,
+  return list.map(L => ({ id: L.id, name: L.name, randomizer: !!L.randomizer, end: L.end > 0 ? L.end : null, reward: cleanReward(L.reward),
     colors: (c => Object.keys(c).length ? c : null)(cleanColors(L.colors)), objects: L.objects }));
 }
 // A level's own colors: {"bg": "#287DFF", "obj": "#FFFFFF", "1": {"rgb": "#FF0000", "opacity": 0.5}}
@@ -2397,8 +2608,16 @@ function cleanLevel(L, i) {
     randomizer: !!L.randomizer,
     end: L.end > 0 ? Math.round(L.end) : null,
     colors: cleanColors(L.colors),
+    reward: cleanReward(L.reward),
     objects,
   };
+}
+// A level's reward: {"ship": 5, "cube": 12}, either part optional. null = no reward.
+function cleanReward(r) {
+  if (!isOpts(r)) return null;
+  const out = {};
+  for (const form of ['ship', 'cube']) { const id = intIn(r[form], 0, ICON_FORMS[form].max, 0); if (id > 0) out[form] = id; }
+  return Object.keys(out).length ? out : null;
 }
 function newId() { return 'lvl_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 
@@ -2429,7 +2648,7 @@ function saveLevelsSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(save
 
 // --- settings (the Settings button on the menu, plus the editor's own options) ---
 // Kept in this browser only. Dev mode (editorMode) starts off, so visitors to your
-// website only see Play and Practice until they turn it on themselves.
+// website only see Play and Practice until they unlock it in the dungeon.
 const SETTINGS_KEY = 'shiprun.settings.v1';
 const SETTING_DEFAULTS = {
   editorMode: false, showProgress: true, showPercent: true, showAttempts: true, showLevelName: true, lowDetail: false,
@@ -2467,6 +2686,7 @@ function levelsFileText(list) {
     out.push('    "randomizer": ' + JSON.stringify(!!L.randomizer) + ',');
     out.push('    "end": ' + JSON.stringify(L.end > 0 ? L.end : null) + ',');
     if (L.colors && Object.keys(L.colors).length) out.push('    "colors": ' + JSON.stringify(L.colors).replace(/,/g, ', ').replace(/":/g, '": ') + ',');
+    if (L.reward) out.push('    "reward": ' + JSON.stringify(L.reward).replace(/,/g, ', ').replace(/":/g, '": ') + ',');
     out.push('    "objects": [');
     L.objects.forEach((o, j) => out.push('      ' + JSON.stringify(o).replace(/,/g, ', ').replace(/":/g, '": ') + (j < L.objects.length - 1 ? ',' : '')));
     out.push('    ]');
@@ -2478,7 +2698,8 @@ function levelsFileText(list) {
 
 function levelCodeText(L) {
   const c = L.colors && Object.keys(L.colors).length ? { colors: L.colors } : {};
-  return JSON.stringify({ id: L.id, name: L.name, randomizer: !!L.randomizer, end: L.end > 0 ? L.end : null, ...c, objects: L.objects });
+  const r = L.reward ? { reward: L.reward } : {};
+  return JSON.stringify({ id: L.id, name: L.name, randomizer: !!L.randomizer, end: L.end > 0 ? L.end : null, ...c, ...r, objects: L.objects });
 }
 
 // Reads a levels.js file, a list of levels, or one level's code
@@ -4650,7 +4871,7 @@ $('edPause').addEventListener('click', e => {
   if (a === 'resume') edClosePause();
   else if (a === 'save') { edSave(); edOpenPause(); }
   else if (a === 'saveexit') { edSave(); edLeave(); }
-  else if (a === 'saveplay') { edSave(); edClosePause(); startPlay('practice', { level: ed.level, returnTo: 'levels' }); }
+  else if (a === 'saveplay') { edSave(); edClosePause(); startPlay('level', { level: ed.level, returnTo: 'levels' }); }
   else if (a === 'exit') {
     if (!edDirty()) { edLeave(); return; }
     armConfirm(b.querySelector('.gold'), 'EXIT WITHOUT SAVING?', () => {
@@ -4683,10 +4904,11 @@ function showScreen(name) {
   document.querySelectorAll('.screen').forEach(s => { s.hidden = s.id !== 'scr-' + name; });
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
   releaseInput();
-  if (name === 'menu') { renderMenuNote(); $('btnEditor').hidden = !settings.editorMode; requestAnimationFrame(renderKitTile); }
+  if (name === 'menu') { renderMenuNote(); requestAnimationFrame(renderKitTile); }
+  if (name === 'dungeon') openDungeon();
   if (name === 'icons') requestAnimationFrame(openKit);
   if (name === 'play') requestAnimationFrame(fitGameCanvas);
-  if (name === 'practice') renderPractice();
+  if (name === 'path') renderPath();
   if (name === 'levels') renderLevelList();
   if (name === 'editor') requestAnimationFrame(() => { edResize(); renderPalette(); edRenderUI(); });
   requestAnimationFrame(() => { fitTitle(); fitText(); });
@@ -4726,10 +4948,12 @@ function afterFont() {
 }
 
 function renderMenuNote() {
-  const n = randomizerPool().length;
-  let note = n
-    ? `${n} level${n === 1 ? '' : 's'} in the random pool. Each run plays ${Math.min(n, LEVELS_PER_RUN)} of them in a random order.`
-    : 'No levels in the random pool yet. Make some in the editor.';
+  const list = pathLevels(), done = list.filter(levelBeaten).length;
+  let note = !list.length ? 'No levels yet. Make some in the editor.'
+    : done === list.length ? `All ${list.length} levels beaten! The Random Mix plays ${Math.min(randomizerPool().length, LEVELS_PER_RUN)} random levels back to back.`
+    : `${done} of ${list.length} levels beaten. Beat them all to unlock the Random Mix.`;
+  $('btnMix').classList.toggle('locked', !mixUnlocked());
+  $('btnMix').setAttribute('aria-label', mixUnlocked() ? 'Random mix' : 'Random mix (locked: beat every level first)');
   if (usingLocal) note += ' You are playing the levels you edited in this browser.';
   $('menuNote').textContent = note;
 }
@@ -4739,22 +4963,52 @@ function levelMeta(L) {
   const coins = L.objects.filter(d => d[0] === 'Coin');
   const got = coins.filter(d => coinSaved(L.id, getArg(d, 1) + ',' + getArg(d, 2))).length;
   const dots = coins.length ? ` · COINS ${coins.map((d, i) => `<i class="coin-dot${i < got ? ' got' : ''}"></i>`).join('')}` : '';
-  return `${L.objects.length} OBJECTS · ${cols} COLUMNS · ${(cols / speed_lookup.normal).toFixed(1)} S${dots}`;
+  return `${L.objects.length} OBJECTS · ${cols} COLUMNS · ${(cols / speed_lookup.normal).toFixed(1)} S${dots}${L.reward ? ' · REWARD: ' + rewardText(L.reward) : ''}`;
 }
 
-function renderPractice() {
-  const box = $('practiceList');
-  if (!levels.length) { box.innerHTML = '<p class="gd-empty">There are no levels yet.</p>'; return; }
-  box.innerHTML = levels.map((L, i) => `<div class="gd-row">
-      <div class="gd-row-main"><span class="gd-row-name">${esc(L.name)}</span><span class="gd-row-meta">${levelMeta(L)}</span></div>
-      <div class="gd-row-actions"><button class="gd-btn" data-play="${i}">PLAY</button></div>
-    </div>`).join('');
+// The level path: every level in order, with your best % on each
+function renderPath() {
+  const box = $('pathList'), list = pathLevels();
+  if (!list.length) { box.innerHTML = '<p class="gd-empty">There are no levels yet.</p>'; return; }
+  box.innerHTML = list.map((L, i) => {
+    const open = levelUnlocked(L), won = levelBeaten(L), best = won ? 100 : progress.best[L.id] || 0;
+    const check = won ? '<svg class="path-check" aria-label="beaten"><use href="#i-check"/></svg>' : '';
+    const prac = progress.practice[L.id] || 0;
+    const info = open
+      ? `<div class="path-bar"><div class="progress"><div class="progress-fill" style="width:${best}%"></div></div><span class="o">${best}%</span></div>
+         <div class="path-bar practice"><div class="progress"><div class="progress-fill" style="width:${prac}%"></div></div><span class="o">${prac}%</span></div>`
+      : `<span class="gd-row-meta">BEAT ${esc(list[i - 1].name)} TO UNLOCK</span>`;
+    return `<div class="gd-row path-row${open ? '' : ' locked'}${won ? ' beaten' : ''}">
+      <span class="path-num" aria-hidden="true">${i + 1}</span>
+      <div class="gd-row-main"><span class="gd-row-name">${esc(L.name)}${check}</span>${info}</div>
+      ${L.reward ? `<div class="path-reward" title="Beat it to unlock ${rewardText(L.reward).toLowerCase()}">${['ship', 'cube'].filter(f => L.reward[f]).map(f =>
+        `<canvas data-rform="${f}" data-rid="${L.reward[f]}" data-won="${won ? 1 : ''}" aria-label="Reward: ${f} ${L.reward[f]}"></canvas>`).join('')}</div>` : ''}
+      <div class="gd-row-actions">${open
+        ? `<button class="gd-btn" data-play="${esc(L.id)}" aria-label="Play ${esc(L.name)}">PLAY</button>
+           <button class="gd-btn blue small" data-practice="${esc(L.id)}" aria-label="Practice ${esc(L.name)}">PRACTICE</button>`
+        : '<svg class="path-lock" role="img" aria-label="Locked"><use href="#i-lock"/></svg>'}</div>
+    </div>`;
+  }).join('');
+  drawPathRewards(); setTimeout(drawPathRewards, 600);   // again once the icon pictures have loaded
 }
-$('practiceList').addEventListener('click', e => {
-  const b = e.target.closest('[data-play]'); if (!b) return;
-  const L = levels[Number(b.dataset.play)];
-  afterWarning(() => { track('practice-start'); startPlay('practice', { level: L, returnTo: 'practice' }); });
+// Each level's reward icons: gray until earned, then in your colors
+function drawPathRewards() {
+  if (screen !== 'path') return;
+  $('pathList').querySelectorAll('[data-rform]').forEach(c => {
+    const form = c.dataset.rform, [W, H] = sizeCanvasToBox(c);
+    const look = c.dataset.won ? { ...kit, [form]: Number(c.dataset.rid) } : { ...KIT_GRID_LOOK, [form]: Number(c.dataset.rid) };
+    drawKitIcon(c.getContext('2d'), form, W / 2, H / 2, Math.min(H * 0.7, W * (form === 'ship' ? 0.5 : 0.7)), look);
+  });
+}
+$('pathList').addEventListener('click', e => {
+  const b = e.target.closest('[data-play], [data-practice]'); if (!b) return;
+  const practice = !!b.dataset.practice;
+  const L = pathLevels().find(x => x.id === (b.dataset.play || b.dataset.practice));
+  if (!L || !levelUnlocked(L)) return;
+  afterWarning(() => { track(practice ? 'practice-start' : 'level-start'); startPlay('level', { level: L, returnTo: 'path', practice }); });
 });
+$('cpPlace').addEventListener('click', placeCheckpoint);
+$('cpRemove').addEventListener('click', removeCheckpoint);
 
 function renderLevelList() {
   const st = $('publishStatus');
@@ -4772,9 +5026,12 @@ function renderLevelList() {
       <div class="gd-row-actions">
         <button class="gd-btn" data-act="edit">EDIT</button>
         <button class="gd-btn blue" data-act="play">PLAY</button>
+        <button class="gd-btn gray small" data-act="reward">REWARD</button>
         <button class="gd-btn gray small" data-act="code">CODE</button>
         <button class="gd-btn gray small" data-act="dup">COPY</button>
         <button class="gd-btn red small" data-act="del">DELETE</button>
+        <button class="gd-btn gray small" data-act="up" aria-label="Move ${esc(L.name)} earlier"${i ? '' : ' disabled'}>▲</button>
+        <button class="gd-btn gray small" data-act="down" aria-label="Move ${esc(L.name)} later"${i < levels.length - 1 ? '' : ' disabled'}>▼</button>
       </div>
     </div>`).join('');
 }
@@ -4787,9 +5044,11 @@ $('levelList').addEventListener('click', e => {
   const i = Number(b.closest('.gd-row').dataset.i), L = levels[i];
   const act = b.dataset.act;
   if (act === 'edit') edOpen(L);
-  else if (act === 'play') startPlay('practice', { level: L, returnTo: 'levels' });
+  else if (act === 'play') startPlay('level', { level: L, returnTo: 'levels' });
+  else if (act === 'reward') showRewardModal(L);
   else if (act === 'code') showTextModal('LEVEL CODE', `Anyone can add "${L.name}" to their editor with Paste level code.`, levelCodeText(L), false);
   else if (act === 'dup') { const c = clone(L); c.id = newId(); c.name = L.name + ' copy'; levels.splice(i + 1, 0, c); saveLevels(); renderLevelList(); }
+  else if (act === 'up' || act === 'down') moveLevel(i, act === 'up' ? -1 : 1);
   else if (act === 'del') armConfirm(b, 'SURE?', () => { levels.splice(i, 1); saveLevels(); renderLevelList(); toast('Deleted ' + L.name + '.'); });
 });
 
@@ -4959,7 +5218,13 @@ function renderKitGrid() {
     }, { root: grid, rootMargin: '120px' });
     grid.querySelectorAll('.kit-icon').forEach(b => kitUI.observer.observe(b));
   } else for (const b of kitUI.seen) drawKitTileArt(b);
-  grid.querySelectorAll('.kit-icon').forEach(b => b.setAttribute('aria-pressed', Number(b.dataset.icon) === kit[form]));
+  grid.querySelectorAll('.kit-icon').forEach(b => {
+    const id = Number(b.dataset.icon), lock = iconLock(form, id), kind = form === 'cube' ? 'Cube' : 'Ship';
+    b.setAttribute('aria-pressed', id === kit[form]);
+    b.classList.toggle('locked', !!lock);
+    b.title = lock ? `${kind} ${id}: ${lock} to unlock it` : `${kind} ${id}`;
+    b.setAttribute('aria-label', lock ? `${kind} ${id}, locked: ${lock}` : `${kind} ${id}`);
+  });
 }
 function renderKitColors() {
   const box = $('kitColors');
@@ -5030,7 +5295,8 @@ function kitRandom() {
   for (const form of ['cube', 'ship']) {
     const n = kitCount(form);
     let id = 1, tries = 0;
-    do id = 1 + Math.floor(Math.random() * n); while (iconMissing(form, id) && ++tries < 20);
+    do id = 1 + Math.floor(Math.random() * n); while ((iconMissing(form, id) || iconLock(form, id)) && ++tries < 40);
+    if (iconLock(form, id)) id = 1;
     kit[form] = id;
   }
   kit.col1 = Math.floor(Math.random() * PLAYER_COLORS.length);
@@ -5068,7 +5334,13 @@ function kitDownload() {
 document.querySelectorAll('[data-kit-tab]').forEach(b => b.addEventListener('click', () => { kitUI.tab = b.dataset.kitTab; kitUI.colors = false; renderKit(); }));
 document.querySelectorAll('[data-kit-slot]').forEach(b => b.addEventListener('click', () => { kitUI.slot = b.dataset.kitSlot; renderKit(); }));
 $('kitPaletteBtn').addEventListener('click', () => { kitUI.colors = !kitUI.colors; renderKit(); });
-$('kitGrid').addEventListener('click', e => { const b = e.target.closest('[data-icon]'); if (b) { kit[kitUI.tab] = Number(b.dataset.icon); kitChanged(); } });
+// A locked icon can't be picked (one you already wear stays on)
+$('kitGrid').addEventListener('click', e => {
+  const b = e.target.closest('[data-icon]'); if (!b) return;
+  const id = Number(b.dataset.icon), lock = iconLock(kitUI.tab, id);
+  if (lock) { toast(`${lock} to unlock this ${kitUI.tab}.`); return; }
+  kit[kitUI.tab] = id; kitChanged();
+});
 function kitPickColor(slot, i) {
   kit[slot] = i;
   if (slot === 'glowCol') kit.glow = true;      // picking a glow color turns the glow on
@@ -5083,9 +5355,99 @@ $('kitDownload').addEventListener('click', kitDownload);
 $('btnIcons').addEventListener('click', () => showScreen('icons'));
 
 
+// --- the dungeon: the key on the main menu leads here, and the right name unlocks dev mode ---
+// The names are kept as hashes so they aren't sitting in the code as plain text.
+// This only keeps out casual players: the game runs in the browser, so it isn't real security.
+const DUNGEON_NAMES = new Set(['14o26wavpgh', '1d4fhaumlbc', 'sfzytgm1y4', '15wzw3ousxo', 'iq519v7goq', '1conatbe33v', '2b9hwu5lbfn', '11oatc6r82k']);
+function nameHash(str, seed = 0x5d1) {        // cyrb53
+  let h1 = 0xdeadbeef ^ seed, h2 = 0x41c6ce57 ^ seed;
+  for (let i = 0, ch; i < str.length; i++) { ch = str.charCodeAt(i); h1 = Math.imul(h1 ^ ch, 2654435761); h2 = Math.imul(h2 ^ ch, 1597334677); }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507); h1 ^= Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507); h2 ^= Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+}
+function openDungeon() {
+  $('dgName').value = '';
+  $('dgMsg').textContent = ''; $('dgMsg').className = 'dg-msg';
+  setTimeout(() => $('dgName').focus(), 30);
+}
+$('dgForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const name = $('dgName').value, msg = $('dgMsg'), form = $('dgForm');
+  if (!name) return;
+  if (DUNGEON_NAMES.has(nameHash('dungeon:' + name))) {
+    settings.editorMode = true; saveSettings();
+    msg.textContent = 'Welcome. Dev mode is unlocked.'; msg.className = 'dg-msg good';
+    $('dgName').blur();
+    setTimeout(() => {
+      if (screen !== 'dungeon') return;
+      showScreen('menu');
+      toast('Dev mode is on. Press Tab, or click the key, to open the dev menu.');
+    }, 1200);
+  } else {
+    msg.textContent = 'That is not your name.'; msg.className = 'dg-msg bad';
+    form.classList.remove('shake'); void form.offsetWidth; form.classList.add('shake');
+    $('dgName').select();
+  }
+});
+function openEditorFromDevMenu() {
+  showHackMenu(false);
+  if (screen === 'editor' || screen === 'levels') { showScreen('levels'); return; }
+  if (screen === 'play') {
+    if (game.mode === 'test') { leavePlay(); showScreen('levels'); return; }
+    game.paused = false; upInput = false; hideOverlay();
+  }
+  track('editor-open');
+  showScreen('levels');
+}
+function lockDevMode() {
+  showHackMenu(false);
+  if (screen === 'play' && game.mode === 'test') leavePlay();
+  settings.editorMode = false; saveSettings();
+  if (screen === 'levels' || screen === 'editor') showScreen('menu');
+  else if (screen === 'play') { updateHud(true); if (game.paused) showPauseMenu(); }
+  toast('Dev mode is locked. The editor and the dev menu are hidden, and no hacks are on.');
+}
+// The icons a level gives when it's beaten (blank or 0 = none)
+function showRewardModal(L) {
+  const r = L.reward || {};
+  const row = (form, label) => `<label class="rw-row"><span class="set-name">${label}</span>
+      <input class="gd-input" type="number" min="0" max="${ICON_FORMS[form].max}" step="1" data-rw="${form}" value="${r[form] || ''}" placeholder="NONE">
+      <canvas class="rw-prev" data-rwprev="${form}"></canvas></label>`;
+  showModal('REWARD', `<p>The icons <b>${esc(L.name)}</b> unlocks when it's beaten. Until then they are locked in the icon kit.
+      Type an icon number from the icon kit, or leave it blank for none.</p>
+    <div class="rw-list">${row('ship', 'SHIP')}${row('cube', 'CUBE')}</div>
+    <p class="small">Saved with the level: download levels.js to put it on your website.</p>`, [
+    { label: 'SAVE', primary: true, fn: () => {
+      const v = {};
+      $('modalBody').querySelectorAll('[data-rw]').forEach(i => { v[i.dataset.rw] = Number(i.value) || 0; });
+      L.reward = cleanReward(v); saveLevels(); hideModal(); renderLevelList();
+      toast(L.reward ? `${L.name} now unlocks ${rewardText(L.reward).toLowerCase()}.` : `${L.name} has no reward now.`);
+    } },
+    { label: 'CANCEL', fn: hideModal },
+  ], 'reward');
+  const draw = () => $('modalBody').querySelectorAll('[data-rwprev]').forEach(c => {
+    const form = c.dataset.rwprev, id = Number($('modalBody').querySelector(`[data-rw="${form}"]`).value) || 0;
+    const [W, H] = sizeCanvasToBox(c);
+    if (id > 0 && id <= ICON_FORMS[form].max) drawKitIcon(c.getContext('2d'), form, W / 2, H / 2, H * 0.62, { ...KIT_GRID_LOOK, [form]: id });
+  });
+  $('modalBody').querySelectorAll('[data-rw]').forEach(i => i.addEventListener('input', draw));
+  requestAnimationFrame(draw); setTimeout(draw, 600);    // again once the icon pictures have loaded
+}
+const rewardText = r => ['ship', 'cube'].filter(f => r[f]).map(f => `${f.toUpperCase()} ${r[f]}`).join(' + ');
+
+// The order of the levels list is the order the levels are played in
+function moveLevel(i, by) {
+  const j = i + by;
+  if (j < 0 || j >= levels.length) return;
+  [levels[i], levels[j]] = [levels[j], levels[i]];
+  saveLevels(); renderLevelList();
+  const b = $('levelList').querySelector(`.gd-row[data-i="${j}"] [data-act="${by < 0 ? 'up' : 'down'}"]`);
+  if (b && !b.disabled) b.focus();
+}
+
 // --- the Settings menu ---
 const GAME_SETTINGS = [
-  ['editorMode', 'DEV MODE', 'Unlocks the level editor and the hack menu (Tab): noclip, speedhack, hitboxes and more. Until it is on, they are hidden and cannot be used.'],
   ['showProgress', 'PROGRESS BAR', 'The bar at the top while you play.'],
   ['showPercent', 'PERCENTAGE', 'The number next to the progress bar.'],
   ['showAttempts', 'ATTEMPT COUNTER', 'The "Attempt 3" text at the start of each try.'],
@@ -5125,23 +5487,19 @@ $('modalBody').addEventListener('change', e => {
   const c = e.target.closest('[data-set]');
   if (!c || modalKind !== 'game') return;
   settings[c.dataset.set] = c.checked; saveSettings();
-  if (c.dataset.set === 'editorMode') {
-    $('btnEditor').hidden = !settings.editorMode;
-    if (!settings.editorMode) showHackMenu(false);
-    toast(settings.editorMode ? 'Dev mode on. The EDITOR button is on the main menu, and Tab opens the hack menu.' : 'Dev mode off. The editor and the hack menu are hidden, and no hacks are on.');
-    requestAnimationFrame(() => fitText());
-  }
 });
 
 function showHowToPlay() {
   showModal('HOW TO PLAY', `<dl class="keys-list">
       <dt>SPACE / UP / CLICK</dt><dd>Hold to fly up. Let go to fall.</dd>
       <dt>ESC</dt><dd>Pause.</dd>
-${settings.editorMode ? `      <dt>TAB</dt><dd>Open or close the hack menu (dev mode).</dd>
+      <dt>Z / X</dt><dd>In practice mode: place a checkpoint / remove the last one.</dd>
+${settings.editorMode ? `      <dt>TAB</dt><dd>Open or close the dev menu (dev mode).</dd>
       <dt>I</dt><dd>Noclip on or off.</dd>
       <dt>H</dt><dd>Show hitboxes on or off.</dd>
 ` : ''}    </dl>
-    <p>A run is ${LEVELS_PER_RUN} random levels back to back. Crash once and a new run starts with new levels.</p>`,
+    <p>Play the levels in order: beating one unlocks the next. Beat them all to unlock the Random Mix,
+      ${LEVELS_PER_RUN} random levels back to back. Crash once in a mix and a new one starts with new levels.</p>`,
     [{ label: 'OK', primary: true, fn: hideModal }]);
 }
 
@@ -5160,9 +5518,9 @@ function afterWarning(go) {
 }
 
 // buttons
-$('btnPlay').addEventListener('click', () => afterWarning(() => { if (startRun()) track('play-start'); }));
-$('btnPractice').addEventListener('click', () => showScreen('practice'));
-$('btnEditor').addEventListener('click', () => { track('editor-open'); showScreen('levels'); });
+$('btnPlay').addEventListener('click', () => showScreen('path'));
+$('btnMix').addEventListener('click', () => afterWarning(() => { if (startRun()) track('play-start'); }));
+$('btnKey').addEventListener('click', () => { if (settings.editorMode) showHackMenu(true); else showScreen('dungeon'); });
 $('btnHelp').addEventListener('click', showHowToPlay);
 $('btnSettings').addEventListener('click', showGameSettings);
 document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => showScreen(b.dataset.go)));
@@ -5202,6 +5560,8 @@ window.addEventListener('keydown', e => {
       else if (game.paused) resumeGame();
       else pauseGame();
     }
+    else if (e.code === 'KeyZ' && !e.repeat) placeCheckpoint();
+    else if (e.code === 'KeyX' && !e.repeat) removeCheckpoint();
     else if (e.code === 'KeyI' && settings.editorMode) setHack('noclip', !hk('noclip'));
     else if (e.code === 'KeyH' && settings.editorMode) setHack('hitboxes', !hk('hitboxes'));
     return;
@@ -5214,7 +5574,7 @@ window.addEventListener('keyup', e => {
   if (e.key === ' ') { ed.spaceDown = false; delete edCanvas.dataset.pan; }
 });
 $('stage').addEventListener('pointerdown', e => {
-  if (e.target.closest('.overlay, .pause-btn')) return;
+  if (e.target.closest('.overlay, .pause-btn, .cp-btns')) return;
   if (game.paused || game.finished) return;
   e.preventDefault(); queueInput(true, e); noteClick();
 });
@@ -5244,7 +5604,7 @@ function frame(now) {
       if (game.dead) {
         applyInputUntil(); inputStepDone();   // holding through the respawn still works
         game.deathTimer -= t;
-        if (game.deathTimer <= 0) restart();
+        if (game.deathTimer <= 0) respawn();
       } else {
         game.acc += t;
         while (game.acc >= dt) {

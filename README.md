@@ -14,10 +14,12 @@ Besides normal page views, the game sends these events:
 
 | Event | Sent when |
 | --- | --- |
-| `play-start` | A random run is started with the PLAY button on the main menu (not when it restarts after a crash, or with "play again"). |
-| `level-complete:<levelId>` | The ship gets past the end of a level in a random run or in Practice. `<levelId>` is the level's id from `levels.js`, e.g. `level-complete:crack`. |
-| `practice-start` | A level is started from the Practice screen. |
-| `editor-open` | The level editor is opened with the EDITOR button on the main menu (dev mode only). |
+| `play-start` | A Random Mix is started with the RANDOM MIX button on the main menu (not when it restarts after a crash, or with "new mix"). |
+| `practice-start` | A level is started in practice mode (PRACTICE on the level path, or from the pause menu). |
+| `level-start` | A level is started from the level path (PLAY on the main menu), or with NEXT after beating a level. |
+| `level-complete:<levelId>` | The ship gets past the end of a level in a Random Mix or on the level path. `<levelId>` is the level's id from `levels.js`, e.g. `level-complete:crack`. |
+| `mix-unlocked` | Beating the last level unlocks the Random Mix. |
+| `editor-open` | The level editor is opened with Level Editor in the dev menu (dev mode only). |
 | `test-level` | A level is tested from inside the editor. |
 
 Nothing else is tracked while the editor is in use. Nothing is sent when the
@@ -28,6 +30,18 @@ game works exactly the same.
 The analytics code is the `track()` helper near the top of section 8 of
 `game.js`, plus the GoatCounter `<script>` tag at the end of `<head>` in
 `index.html`.
+
+## Progression and rewards
+
+PLAY opens the levels in the order of `levels.js` (set it with the ▲/▼ arrows in the
+level editor). Beating a level unlocks the next, and beating them all unlocks the Random Mix.
+Progress is saved in the browser.
+
+Each level can unlock icons: in the level editor, click **REWARD** on a level and type a ship
+and/or cube number from the icon kit. It's saved with the level in `levels.js`, so new levels
+get their own reward the same way. An icon that is a reward is locked in the icon kit until
+it's earned; every other icon is free. The rewards for beating every level and for finishing a
+Random Mix are `BONUS_REWARDS` at the top of `game.js`.
 
 ## Icon kit
 
