@@ -2550,7 +2550,9 @@ function countFrame(now) {
 const clickTimes = [];
 function noteClick() {
   game.clicks++;
-  clickTimes.push(performance.now());
+  const now = performance.now();
+  clickTimes.push(now);
+  while (now - clickTimes[0] > 1000) clickTimes.shift();     // only the last second is needed
 }
 let statusKey = '';
 function updateStatus(now) {
