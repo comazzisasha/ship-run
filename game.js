@@ -2414,6 +2414,10 @@ function hackSpeed() { return hk('speedhack') ? hacks.speed : 1; }
 function cheatsOn() { return GAMEPLAY_HACKS.some(id => id === 'speedhack' ? hackSpeed() !== 1 : hk(id)); }
 function setHack(id, v) {
   hacks.on[id] = v; saveHacks();
+  hacksChanged();
+}
+// Redraws whatever on screen shows what the hacks do (locked levels and icons, the HUD, the dev menu)
+function hacksChanged() {
   if (screen === 'play') updateHud(true);
   if (screen === 'menu') renderMenuNote();
   if (screen === 'path') renderPath();
@@ -2483,7 +2487,7 @@ function hackAction(act) {
   if (act === 'resetLayout') { placeHackWindows(true); return; }
   if (act === 'editor') { openEditorFromDevMenu(); return; }
   if (act === 'lockDev') { lockDevMode(); return; }
-  if (act === 'allOff') { hacks.on = { ...HACK_DEFAULTS }; saveHacks(); if (screen === 'play') updateHud(true); renderHackMenu(); toast('All hacks are off.'); return; }
+  if (act === 'allOff') { hacks.on = { ...HACK_DEFAULTS }; saveHacks(); hacksChanged(); toast('All hacks are off.'); return; }
   if (screen !== 'play' || game.finished) { toast('Start a level first.'); return; }
   if (act === 'restart') { if (game.paused) hideOverlay(); restart(); }
   else if (act === 'complete') {
@@ -5405,7 +5409,7 @@ function lockDevMode() {
   if (screen === 'play' && game.mode === 'test') leavePlay();
   settings.editorMode = false; saveSettings();
   if (screen === 'levels' || screen === 'editor') showScreen('menu');
-  else if (screen === 'play') { updateHud(true); if (game.paused) showPauseMenu(); }
+  else { hacksChanged(); if (screen === 'play' && game.paused) showPauseMenu(); }
   toast('Dev mode is locked. The editor and the dev menu are hidden, and no hacks are on.');
 }
 // The icons a level gives when it's beaten (blank or 0 = none)
