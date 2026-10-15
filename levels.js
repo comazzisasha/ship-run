@@ -391,6 +391,7 @@ window.LEVELS = [
     "name": "Back On Track",
     "randomizer": true,
     "end": null,
+    "reward": {"ship": 12, "cube": 12},
     "objects": [
       ["Block", 20, 10],
       ["Block", 21, 9],
@@ -1848,6 +1849,7 @@ window.LEVELS = [
     "name": "Clubstep Ship 1",
     "randomizer": true,
     "end": null,
+    "reward": {"ship": 13, "cube": 13},
     "objects": [
       ["TelePortal", 10, 2, 6],
       ["GridBlock", 12, 1],
@@ -4299,7 +4301,7 @@ window.LEVELS = [
     "randomizer": true,
     "end": null,
     "colors": {"bg": "#6C090B", "ground": "#000000", "line": "#000000"},
-    "reward": {"ship": 12, "cube": 12},
+    "reward": {"ship": 22, "cube": 30},
     "objects": [
       ["OutlineBlock", 21, 4, 0, 3],
       ["OutlineBlock", 21, 3, 90, 2],
