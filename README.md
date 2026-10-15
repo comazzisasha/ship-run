@@ -43,6 +43,24 @@ get their own reward the same way. An icon that is a reward is locked in the ico
 it's earned; every other icon is free. The rewards for beating every level and for finishing a
 Random Mix are `BONUS_REWARDS` at the top of `game.js`.
 
+## Importing Geometry Dash levels
+
+In the level editor (dev mode), **IMPORT FILE** also takes Geometry Dash levels exported
+with the [GDShare](https://github.com/HJfod/GDShare) mod: `.gmd`, `.gmd2` and `.lvl`.
+**PASTE LEVEL CODE** takes a `.gmd` file's text or a raw level string (`H4sIA...`).
+The level is added to MY LEVELS like any other, so it can be edited, tested and published
+in `levels.js`. A report says what came over and what was left out.
+
+A `.gmd` is Geometry Dash's own level save, an XML plist: `k2` is the name, `k5` the creator
+and `k4` the level, which is base64 of gzip of `header;object;object;...`. Each object is
+`key,value,...` pairs (1 = object ID, 2/3 = x/y in units of 30 per square, 6 = rotation, ...).
+
+What comes over: blocks, spikes, thorn pits, saws, speed / gravity / size / teleport portals,
+yellow pads and orbs, coins, color and alpha triggers, colors and groups. Only the ship parts
+of a level come over: cube, ball, UFO, wave, robot, spider and swing parts are cut out and the
+ship parts are joined. Decoration, other orbs and pads, and move, spawn and other triggers are
+left out. Which Geometry Dash objects become what is the tables at the top of `gd-import.js`.
+
 ## Icon kit
 
 The ICONS button on the main menu opens an icon kit for picking your cube, ship

@@ -5061,19 +5061,33 @@ $('btnExport').addEventListener('click', () => {
   showTextModal('LEVELS.JS', 'This file holds every level. Upload it to your website and replace the old levels.js.', levelsFileText(levels), true);
 });
 $('btnImportFile').addEventListener('click', () => $('importFile').click());
+// A Geometry Dash level (GDShare's .gmd, .gmd2, .lvl, or its text): gd-import.js turns it
+// into a Ship Run level, which is added to the list with a report of what came over
+function importGdLevel(read) {
+  if (!window.GD_IMPORT) return toast('gd-import.js is missing, so Geometry Dash levels cannot be imported.');
+  read(window.GD_IMPORT).then(({ level, report }) => {
+    addLevels([cleanLevel(level, levels.length)]);
+    renderLevelList();
+    showModal('GEOMETRY DASH LEVEL', report.map(line => `<p>${esc(line)}</p>`).join(''), [{ label: 'OK', primary: true, fn: hideModal }]);
+  }).catch(err => toast(err.message || 'That Geometry Dash level could not be read.'));
+}
 $('importFile').addEventListener('change', e => {
   const f = e.target.files && e.target.files[0]; if (!f) return;
+  e.target.value = '';
+  if (/\.(gmd2?|gmdl|lvl)$/i.test(f.name)) return importGdLevel(gd => gd.readFile(f));
   const r = new FileReader();
   r.onload = () => {
+    if (window.GD_IMPORT && window.GD_IMPORT.looksLikeGd(r.result)) return importGdLevel(gd => gd.fromText(r.result, f.name.replace(/\.[^.]*$/, '')));
     try { const res = addLevels(parseLevelsText(r.result)); toast(`Imported: ${res.added} new, ${res.replaced} updated.`); renderLevelList(); }
     catch (err) { toast(err.message); }
   };
   r.readAsText(f);
-  e.target.value = '';
 });
 $('btnPasteCode').addEventListener('click', () => {
-  showModal('PASTE LEVEL CODE', `<p>Paste one level's code, or a whole levels.js file.</p><textarea id="pasteArea" rows="8" spellcheck="false" aria-label="Level code"></textarea>`, [
+  showModal('PASTE LEVEL CODE', `<p>Paste one level's code, a whole levels.js file, or a Geometry Dash level (a .gmd file's text or a level string).</p><textarea id="pasteArea" rows="8" spellcheck="false" aria-label="Level code"></textarea>`, [
     { label: 'ADD LEVELS', primary: true, fn: () => {
+      const text = $('pasteArea').value;
+      if (window.GD_IMPORT && window.GD_IMPORT.looksLikeGd(text)) { hideModal(); return importGdLevel(gd => gd.fromText(text)); }
       try { const res = addLevels(parseLevelsText($('pasteArea').value)); hideModal(); renderLevelList(); toast(`Added ${res.added}, updated ${res.replaced}.`); }
       catch (err) { toast(err.message || 'That is not level code.'); }
     } },
