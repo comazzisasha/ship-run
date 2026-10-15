@@ -1356,227 +1356,232 @@ function drawObject(ctx, o, pass) {
   else drawObjectArt(ctx, o, pass, cols);
 }
 
+// How each type of object is drawn. Each tries the Geometry Dash sprite first, then
+// your own picture, then simple shapes, so something is always drawn.
+const OBJECT_ART = {
+  Block: drawBlockArt, GridBlock: drawGridBlockArt, OutlineBlock: drawOutlineArt, InvisibleBlock: drawInvisibleBlockArt,
+  Spike: drawSpikeArt, ShortSpike: drawSpikeArt, SmallSpike: drawSpikeArt, TinySpike: drawSpikeArt,
+  FadeSpike: drawFadeSpikeArt, FadeShortSpike: drawFadeSpikeArt, FadeSmallSpike: drawFadeSpikeArt, FadeTinySpike: drawFadeSpikeArt,
+  ThornPit: drawThornPitArt, Saw: drawSawArt,
+  SpeedPortal: drawSpeedPortalArt, GravityPortal: drawGravityPortalArt, SizePortal: drawSizePortalArt, TelePortal: drawTeleporterArt,
+  Pad: drawPadArt, Orb: drawOrbArt, Coin: drawCoinArt, ColorTrigger: drawTriggerArt, AlphaTrigger: drawTriggerArt,
+  Deco: drawDecoArt, Slope: drawDecoArt,
+};
 function drawObjectArt(ctx, o, pass, cols) {
+  const draw = OBJECT_ART[o.t];
+  if (draw) draw(ctx, o, pass, cols);
+}
+function drawBlockArt(ctx, o, pass, cols) {
   const g = gridSize, main = cols.main;
-  switch (o.t) {
-    case 'Block': {
-      if (drawSprInCell(ctx, 'square_01_001', o, 0.5, 0.5, { color: main })) break;
-      ctx.fillStyle = vGrad(ctx, o.y - g, o.y, '#000000', COLORS.sky);
-      ctx.fillRect(o.x, o.y - g, g, g);
-      ctx.strokeStyle = cssOf(main); ctx.lineWidth = 1;
-      ctx.strokeRect(o.x, o.y - g, g, g);
-      break;
-    }
-    case 'GridBlock': {
-      if (IMG.gridBlock) { ctx.drawImage(IMG.gridBlock, o.x, o.y - g, g, g); break; }
-      if (drawSprInCell(ctx, 'square_05_001', o, 0.5, 0.5)) break;
-      ctx.fillStyle = '#04061a'; ctx.fillRect(o.x, o.y - g, g, g);
-      ctx.strokeStyle = 'rgba(120,150,255,0.22)'; ctx.lineWidth = 0.6;
-      ctx.beginPath();
-      ctx.moveTo(o.x + g / 2, o.y - g); ctx.lineTo(o.x + g / 2, o.y);
-      ctx.moveTo(o.x, o.y - g / 2); ctx.lineTo(o.x + g, o.y - g / 2);
-      ctx.stroke();
-      ctx.strokeStyle = 'rgba(120,150,255,0.35)'; ctx.strokeRect(o.x + 0.5, o.y - g + 0.5, g - 1, g - 1);
-      break;
-    }
-    case 'OutlineBlock': {
-      const P = OUTLINE_PIECES[o.piece], a = o.fade ? fadeAlpha(o) : 1;
-      if (a <= 0.01) break;
-      if (drawSprInCell(ctx, P[0], o, 0.5, P[1], { flipX: o.flip, color: main, alpha: a })) break;
-      ctx.save(); ctx.globalAlpha *= a; ctx.fillStyle = ctx.strokeStyle = cssOf(main);
-      if (o.piece === 1) { ctx.lineWidth = 1.2; ctx.strokeRect(o.x + 0.6, o.y - g + 0.6, g - 1.2, g - 1.2); }
-      else for (const { line: b } of o.parts) {       // each line as thick as piece 1's outline, kept inside the square
-        const w = Math.max(1.2, b.r - b.l), h = Math.max(1.2, b.b - b.t);
-        ctx.fillRect(Math.min(b.l, o.x + g - w), Math.min(b.t, o.y - h), w, h);
-      }
-      ctx.restore();
-      break;
-    }
-    case 'InvisibleBlock': {
-      const a = fadeAlpha(o);
-      if (a <= 0.01) break;
-      if (drawSprInCell(ctx, 'invis_square_01_001', o, 0.5, 0.5, { color: main, alpha: a })) break;
-      ctx.save(); ctx.globalAlpha *= a; ctx.strokeStyle = cssOf(main); ctx.lineWidth = 1.2;
-      ctx.setLineDash([3, 2]); ctx.strokeRect(o.x + 0.6, o.y - g + 0.6, g - 1.2, g - 1.2); ctx.restore();
-      break;
-    }
-    case 'FadeSpike': case 'FadeShortSpike': case 'FadeSmallSpike': case 'FadeTinySpike': {
-      const a = fadeAlpha(o);
-      if (a <= 0.01) break;
-      const [spr, u, v] = SPIKE_SPR[o.shape];
-      if (drawSprInCell(ctx, 'invis_' + spr, o, u, v, { alpha: a, color: main })) break;
-      ctx.save(); ctx.globalAlpha *= a;
-      tracePoly(ctx, o.pts); ctx.strokeStyle = cssOf(main); ctx.lineWidth = 1.2; ctx.lineJoin = 'miter'; ctx.stroke();
-      ctx.restore();
-      break;
-    }
-    case 'Spike': case 'ShortSpike': case 'SmallSpike': case 'TinySpike': {
-      const look = o.design && SPIKE_LOOKS[o.design];
-      const [spr0, u, v0] = SPIKE_SPR[o.t];
-      if (look) {
-        const ctr = rotatePoint([o.x + u * g, o.y - look[2] * g], [o.x + 0.5 * g, o.y - 0.5 * g], o.angle);
-        if (drawLayered(ctx, o.design + '_001', ctr[0], ctr[1], { rot: -o.angle }, cols, '', '', true)) break;
-      } else if (drawSprInCell(ctx, spr0, o, u, v0, { color: main })) break;
-      const ys = o.pts.map(p => p[1]);
-      ctx.fillStyle = vGrad(ctx, Math.min(...ys), Math.max(...ys), '#000000', COLORS.sky);
-      tracePoly(ctx, o.pts); ctx.fill();
-      ctx.strokeStyle = cssOf(main); ctx.lineWidth = 1; ctx.lineJoin = 'miter'; ctx.stroke();
-      break;
-    }
-    case 'ThornPit': {
-      const w = g, h = 105 / 120 * g;
-      if (drawSpr(ctx, (o.design || 'pit_01') + '_001', o.imgX, o.imgY, { rot: rad(o.rotDeg), color: main })) break;
-      ctx.save(); ctx.translate(o.imgX, o.imgY); ctx.rotate(rad(o.rotDeg));
-      if (IMG.thornPit) ctx.drawImage(IMG.thornPit, -w / 2, -h / 2, w, h);
-      else {
-        const P = [[-0.5, 0.5], [-0.4, -0.08], [-0.27, 0.2], [-0.1, -0.5], [0.06, 0.15], [0.2, -0.28], [0.33, 0.2], [0.44, -0.04], [0.5, 0.5]];
-        tracePoly(ctx, P.map(([u, v]) => [u * w, v * h]));
-        ctx.fillStyle = '#05060f'; ctx.fill();
-        ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 0.8; ctx.stroke();
-      }
-      ctx.restore();
-      break;
-    }
-    case 'Saw': {
-      const L = sawLook(o), spr = (o.design || 'sawblade_01') + '_001', rot = rad(o.spin);
-      if (sprCanvas(spr + (L.join ? '|' + L.join : ''))) {
-        // a soft white edge, so black saws show up on dark backgrounds (like Geometry Dash's glow)
-        if (L.halo && !o.noGlow) drawSpr(ctx, spr + (L.join ? '|' + L.join : ''), o.cx, o.cy, { scale: o.size * 1.06, rot, alpha: 0.45 * (main ? main.a : 1) });
-        drawLayered(ctx, spr, o.cx, o.cy, { scale: o.size, rot }, cols, L.join || '', L.det || '', !!L.under);
-        break;
-      }
-      ctx.save(); ctx.translate(o.cx, o.cy); ctx.rotate(rot);
-      const k = o.size * L.r;
-      if (IMG.saw) { const s = 3 * k * g; ctx.drawImage(IMG.saw, -s / 2, -s / 2, s, s); }
-      else {
-        const R = 1.4 * k * g, r = 1.12 * k * g, N = 14;
-        ctx.beginPath();
-        for (let i = 0; i < N * 2; i++) {
-          const a = i * Math.PI / N, rr = i % 2 ? r : R;
-          ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
-        }
-        ctx.closePath(); ctx.fillStyle = '#151827'; ctx.fill();
-        ctx.strokeStyle = '#e9edff'; ctx.lineWidth = 1; ctx.stroke();
-        ctx.beginPath(); ctx.arc(0, 0, R * 0.6, 0, Math.PI * 2); ctx.fillStyle = '#2b3152'; ctx.fill(); ctx.stroke();
-        ctx.beginPath(); ctx.arc(0, 0, R * 0.16, 0, Math.PI * 2); ctx.fillStyle = '#e9edff'; ctx.fill();
-      }
-      ctx.restore();
-      break;
-    }
-    case 'SpeedPortal': {
-      if (pass === 'front') break;
-      if (BOOST_SPR[o.status] && drawSpr(ctx, BOOST_SPR[o.status], o.cx, o.cy, { fit: [o.w, o.h] })) break;
-      const im = IMG['speed_' + o.status];
-      if (im) { imageCentered(ctx, im, o.cx, o.cy, o.w, o.h); break; }
-      const n = { half: 1, normal: 1, double: 2, triple: 3, quad: 4 }[o.status] || 1;
-      const dir = o.status === 'half' ? -1 : 1;
-      const color = COLORS.speed[o.status] || '#fff';
-      const a = Math.min(o.w / (n * 2.6), 6), b = o.h * 0.3, step = a * 2.2;
-      for (let i = 0; i < n; i++) chevron(ctx, o.cx + (i - (n - 1) / 2) * step, o.cy, a, b, color, dir);
-      break;
-    }
-    case 'GravityPortal': {
-      if (drawPortalSpr(ctx, 'gravity_' + o.status, o.cx, o.cy, o.h, pass)) break;
-      if (pass === 'front') break;
-      const im = IMG['gravity_' + o.status];
-      if (im) { imageCentered(ctx, im, o.cx, o.cy, o.w, o.h); break; }
-      const color = COLORS.gravity[String(o.status)] || '#fff';
-      ring(ctx, o.cx, o.cy, o.w * 0.28, o.h * 0.47, color);
-      const d = o.status === -1 ? -1 : 1;
-      ctx.beginPath(); ctx.moveTo(o.cx - 4, o.cy - 3 * d); ctx.lineTo(o.cx, o.cy + 3 * d); ctx.lineTo(o.cx + 4, o.cy - 3 * d);
-      ctx.lineWidth = 2; ctx.strokeStyle = color; ctx.stroke();
-      break;
-    }
-    case 'SizePortal': {
-      if (drawPortalSpr(ctx, 'size_' + o.status, o.cx, o.cy, o.h, pass)) break;
-      if (pass === 'front') break;
-      const im = IMG['size_' + o.status];
-      if (im) { imageCentered(ctx, im, o.cx, o.cy, o.w, o.h); break; }
-      const color = COLORS.size[o.status] || '#fff';
-      ring(ctx, o.cx, o.cy, o.w * 0.28, o.h * 0.47, color);
-      const s = o.status === 'mini' ? 2.5 : 4.5;
-      ctx.beginPath(); ctx.moveTo(o.cx, o.cy - s); ctx.lineTo(o.cx + s, o.cy); ctx.lineTo(o.cx, o.cy + s); ctx.lineTo(o.cx - s, o.cy); ctx.closePath();
-      ctx.fillStyle = color; ctx.fill();
-      break;
-    }
-    case 'TelePortal': {
-      if (drawPortalSpr(ctx, 'teleIn', o.cx, o.cy1, o.h, pass)) { drawPortalSpr(ctx, 'teleOut', o.cx, o.cy2, o.h, pass); break; }
-      if (pass === 'front') break;
-      if (IMG.teleportIn) imageCentered(ctx, IMG.teleportIn, o.cx, o.cy1, o.w, o.h);
-      else ring(ctx, o.cx, o.cy1, o.w * 0.26, o.h * 0.46, COLORS.teleIn);
-      if (IMG.teleportOut) imageCentered(ctx, IMG.teleportOut, o.cx, o.cy2, o.w, o.h);
-      else ring(ctx, o.cx, o.cy2, o.w * 0.26, o.h * 0.46, COLORS.teleOut);
-      break;
-    }
-    case 'Pad': {
-      if (drawSpr(ctx, 'bump_01_001', o.x + g / 2, o.y - 4 / 60 * g)) break;
-      if (IMG.pad) { ctx.drawImage(IMG.pad, o.x, o.y - PAD_H * g, g, PAD_H * g); break; }
-      ctx.beginPath(); ctx.ellipse(o.x + g / 2, o.y, g * 0.44, g * 0.24, 0, Math.PI, 0);
-      ctx.closePath(); ctx.fillStyle = '#ffe13d'; ctx.fill();
-      ctx.strokeStyle = '#3a2a00'; ctx.lineWidth = 1; ctx.stroke();
-      break;
-    }
-    case 'Orb': {
-      if (drawSpr(ctx, 'ring_01_001', o.x + g / 2, o.y - g / 2)) break;
-      if (IMG.orb) { ctx.drawImage(IMG.orb, o.x, o.y - g, g, g); break; }
-      const cx = o.x + g / 2, cy = o.y - g / 2;
-      ctx.beginPath(); ctx.arc(cx, cy, g * 0.44, 0, Math.PI * 2); ctx.strokeStyle = 'rgba(255,225,61,0.55)'; ctx.lineWidth = 1.5; ctx.stroke();
-      ctx.beginPath(); ctx.arc(cx, cy, g * 0.32, 0, Math.PI * 2); ctx.fillStyle = '#ffe13d'; ctx.fill();
-      ctx.strokeStyle = '#3a2a00'; ctx.lineWidth = 1; ctx.stroke();
-      ctx.beginPath(); ctx.arc(cx, cy, g * 0.14, 0, Math.PI * 2); ctx.fillStyle = '#fff6c4'; ctx.fill();
-      break;
-    }
-    case 'Coin': {
-      // taken this attempt: it flies up and fades. Already saved: a see-through ghost.
-      let cy = o.cy, a = 1;
-      if (o.got) { const t = DRAW.now - o.gotAt; if (t > 0.6) break; cy -= t * 1.6 * g; a = 1 - t / 0.6; }
-      const lvl = DRAW.parts && DRAW.parts[o.part] ? DRAW.parts[o.part].id : null;
-      const ghost = !o.got && lvl && coinSaved(lvl, o.key);
-      const f = ghost ? 0 : DRAW.play ? Math.floor(DRAW.coinTime * 12) % COIN_FRAMES.length : 0;
-      const name = ghost ? 'secretCoin_2_b_01_001' : 'secretCoin_2_01_00' + COIN_FRAMES[f];
-      if (drawSpr(ctx, name, o.cx, cy, { alpha: a * (ghost ? 0.7 : 1), flipX: f >= 4 })) break;
-      ctx.save(); ctx.globalAlpha *= a * (ghost ? 0.45 : 1);
-      ctx.beginPath(); ctx.arc(o.cx, cy, g * 0.55, 0, Math.PI * 2); ctx.fillStyle = '#d9dde6'; ctx.fill();
-      ctx.lineWidth = 1.4; ctx.strokeStyle = '#000'; ctx.stroke();
-      ctx.font = 'bold ' + (g * 0.6) + 'px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#6c7280';
-      ctx.fillText('C', o.cx, cy + 0.5);
-      ctx.restore();
-      break;
-    }
-    case 'ColorTrigger': case 'AlphaTrigger': {
-      if (DRAW.play) break;                       // triggers are invisible while playing
-      const color = o.t === 'ColorTrigger';
-      const icon = color ? 'edit_eTintCol01Btn_001' : 'edit_eAlphaBtn_001';
-      if (!drawSpr(ctx, icon, o.cx, o.cy - g * 0.06, { fit: [g * 0.9, g * 0.82] })) {
-        ctx.fillStyle = color ? '#3b3b3b' : '#20343f'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 0.8;
-        ctx.fillRect(o.x + 2, o.y - g + 2, g - 4, g - 4); ctx.strokeRect(o.x + 2, o.y - g + 2, g - 4, g - 4);
-        ctx.font = 'bold 5px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#fff';
-        ctx.fillText(color ? 'COL' : 'ALPHA', o.cx, o.cy - 3);
-      }
-      // what it changes: its channel (with a dot of the new color) or its group
-      const label = color ? chLabel(o.target) : 'G' + (o.group || '?');
-      ctx.font = 'bold 6px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.lineWidth = 2; ctx.strokeStyle = '#000'; ctx.strokeText(label, o.cx, o.y - 3.2);
-      ctx.fillStyle = o.touch ? '#9dff5c' : o.spawn ? '#ff9c5c' : '#fff'; ctx.fillText(label, o.cx, o.y - 3.2);
-      if (color) {
-        ctx.beginPath(); ctx.arc(o.x + g - 3.2, o.y - g + 3.2, 2.4, 0, Math.PI * 2);
-        ctx.fillStyle = rgbToHex(o.spec.player ? PLAYER_RGB[o.spec.player] : o.spec.rgb); ctx.fill();
-        ctx.lineWidth = 0.7; ctx.strokeStyle = '#000'; ctx.stroke();
-      }
-      break;
-    }
-    case 'Deco': case 'Slope': {
-      const a = o.fade ? fadeAlpha(o) : 1;
-      if (a <= 0.01) break;
-      if (drawLayered(ctx, o.spr, o.px, o.py, { rot: -o.angle, flipX: o.flip, alpha: a }, cols)) break;
-      // sheets not loaded (or "My pictures" chosen): a faint placeholder the size of the art
-      ctx.save(); ctx.translate(o.px, o.py); ctx.rotate(-o.angle); ctx.globalAlpha *= a;
-      ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 0.6;
-      ctx.fillRect(-o.sw / 2, -o.sh / 2, o.sw, o.sh); ctx.strokeRect(-o.sw / 2, -o.sh / 2, o.sw, o.sh);
-      ctx.restore();
-      break;
-    }
+  if (drawSprInCell(ctx, 'square_01_001', o, 0.5, 0.5, { color: main })) return;
+  ctx.fillStyle = vGrad(ctx, o.y - g, o.y, '#000000', COLORS.sky);
+  ctx.fillRect(o.x, o.y - g, g, g);
+  ctx.strokeStyle = cssOf(main); ctx.lineWidth = 1;
+  ctx.strokeRect(o.x, o.y - g, g, g);
+}
+function drawGridBlockArt(ctx, o, pass, cols) {
+  const g = gridSize;
+  if (IMG.gridBlock) { ctx.drawImage(IMG.gridBlock, o.x, o.y - g, g, g); return; }
+  if (drawSprInCell(ctx, 'square_05_001', o, 0.5, 0.5)) return;
+  ctx.fillStyle = '#04061a'; ctx.fillRect(o.x, o.y - g, g, g);
+  ctx.strokeStyle = 'rgba(120,150,255,0.22)'; ctx.lineWidth = 0.6;
+  ctx.beginPath();
+  ctx.moveTo(o.x + g / 2, o.y - g); ctx.lineTo(o.x + g / 2, o.y);
+  ctx.moveTo(o.x, o.y - g / 2); ctx.lineTo(o.x + g, o.y - g / 2);
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(120,150,255,0.35)'; ctx.strokeRect(o.x + 0.5, o.y - g + 0.5, g - 1, g - 1);
+}
+function drawOutlineArt(ctx, o, pass, cols) {
+  const g = gridSize, main = cols.main;
+  const P = OUTLINE_PIECES[o.piece], a = o.fade ? fadeAlpha(o) : 1;
+  if (a <= 0.01) return;
+  if (drawSprInCell(ctx, P[0], o, 0.5, P[1], { flipX: o.flip, color: main, alpha: a })) return;
+  ctx.save(); ctx.globalAlpha *= a; ctx.fillStyle = ctx.strokeStyle = cssOf(main);
+  if (o.piece === 1) { ctx.lineWidth = 1.2; ctx.strokeRect(o.x + 0.6, o.y - g + 0.6, g - 1.2, g - 1.2); }
+  else for (const { line: b } of o.parts) {       // each line as thick as piece 1's outline, kept inside the square
+    const w = Math.max(1.2, b.r - b.l), h = Math.max(1.2, b.b - b.t);
+    ctx.fillRect(Math.min(b.l, o.x + g - w), Math.min(b.t, o.y - h), w, h);
   }
+  ctx.restore();
+}
+function drawInvisibleBlockArt(ctx, o, pass, cols) {
+  const g = gridSize, main = cols.main;
+  const a = fadeAlpha(o);
+  if (a <= 0.01) return;
+  if (drawSprInCell(ctx, 'invis_square_01_001', o, 0.5, 0.5, { color: main, alpha: a })) return;
+  ctx.save(); ctx.globalAlpha *= a; ctx.strokeStyle = cssOf(main); ctx.lineWidth = 1.2;
+  ctx.setLineDash([3, 2]); ctx.strokeRect(o.x + 0.6, o.y - g + 0.6, g - 1.2, g - 1.2); ctx.restore();
+}
+function drawFadeSpikeArt(ctx, o, pass, cols) {
+  const main = cols.main;
+  const a = fadeAlpha(o);
+  if (a <= 0.01) return;
+  const [spr, u, v] = SPIKE_SPR[o.shape];
+  if (drawSprInCell(ctx, 'invis_' + spr, o, u, v, { alpha: a, color: main })) return;
+  ctx.save(); ctx.globalAlpha *= a;
+  tracePoly(ctx, o.pts); ctx.strokeStyle = cssOf(main); ctx.lineWidth = 1.2; ctx.lineJoin = 'miter'; ctx.stroke();
+  ctx.restore();
+}
+function drawSpikeArt(ctx, o, pass, cols) {
+  const g = gridSize, main = cols.main;
+  const look = o.design && SPIKE_LOOKS[o.design];
+  const [spr0, u, v0] = SPIKE_SPR[o.t];
+  if (look) {
+    const ctr = rotatePoint([o.x + u * g, o.y - look[2] * g], [o.x + 0.5 * g, o.y - 0.5 * g], o.angle);
+    if (drawLayered(ctx, o.design + '_001', ctr[0], ctr[1], { rot: -o.angle }, cols, '', '', true)) return;
+  } else if (drawSprInCell(ctx, spr0, o, u, v0, { color: main })) return;
+  const ys = o.pts.map(p => p[1]);
+  ctx.fillStyle = vGrad(ctx, Math.min(...ys), Math.max(...ys), '#000000', COLORS.sky);
+  tracePoly(ctx, o.pts); ctx.fill();
+  ctx.strokeStyle = cssOf(main); ctx.lineWidth = 1; ctx.lineJoin = 'miter'; ctx.stroke();
+}
+function drawThornPitArt(ctx, o, pass, cols) {
+  const g = gridSize, main = cols.main;
+  const w = g, h = 105 / 120 * g;
+  if (drawSpr(ctx, (o.design || 'pit_01') + '_001', o.imgX, o.imgY, { rot: rad(o.rotDeg), color: main })) return;
+  ctx.save(); ctx.translate(o.imgX, o.imgY); ctx.rotate(rad(o.rotDeg));
+  if (IMG.thornPit) ctx.drawImage(IMG.thornPit, -w / 2, -h / 2, w, h);
+  else {
+    const P = [[-0.5, 0.5], [-0.4, -0.08], [-0.27, 0.2], [-0.1, -0.5], [0.06, 0.15], [0.2, -0.28], [0.33, 0.2], [0.44, -0.04], [0.5, 0.5]];
+    tracePoly(ctx, P.map(([u, v]) => [u * w, v * h]));
+    ctx.fillStyle = '#05060f'; ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 0.8; ctx.stroke();
+  }
+  ctx.restore();
+}
+function drawSawArt(ctx, o, pass, cols) {
+  const g = gridSize, main = cols.main;
+  const L = sawLook(o), spr = (o.design || 'sawblade_01') + '_001', rot = rad(o.spin);
+  if (sprCanvas(spr + (L.join ? '|' + L.join : ''))) {
+    // a soft white edge, so black saws show up on dark backgrounds (like Geometry Dash's glow)
+    if (L.halo && !o.noGlow) drawSpr(ctx, spr + (L.join ? '|' + L.join : ''), o.cx, o.cy, { scale: o.size * 1.06, rot, alpha: 0.45 * (main ? main.a : 1) });
+    drawLayered(ctx, spr, o.cx, o.cy, { scale: o.size, rot }, cols, L.join || '', L.det || '', !!L.under);
+    return;
+  }
+  ctx.save(); ctx.translate(o.cx, o.cy); ctx.rotate(rot);
+  const k = o.size * L.r;
+  if (IMG.saw) { const s = 3 * k * g; ctx.drawImage(IMG.saw, -s / 2, -s / 2, s, s); }
+  else {
+    const R = 1.4 * k * g, r = 1.12 * k * g, N = 14;
+    ctx.beginPath();
+    for (let i = 0; i < N * 2; i++) {
+      const a = i * Math.PI / N, rr = i % 2 ? r : R;
+      ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
+    }
+    ctx.closePath(); ctx.fillStyle = '#151827'; ctx.fill();
+    ctx.strokeStyle = '#e9edff'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, 0, R * 0.6, 0, Math.PI * 2); ctx.fillStyle = '#2b3152'; ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, 0, R * 0.16, 0, Math.PI * 2); ctx.fillStyle = '#e9edff'; ctx.fill();
+  }
+  ctx.restore();
+}
+function drawSpeedPortalArt(ctx, o, pass, cols) {
+  if (pass === 'front') return;
+  if (BOOST_SPR[o.status] && drawSpr(ctx, BOOST_SPR[o.status], o.cx, o.cy, { fit: [o.w, o.h] })) return;
+  const im = IMG['speed_' + o.status];
+  if (im) { imageCentered(ctx, im, o.cx, o.cy, o.w, o.h); return; }
+  const n = { half: 1, normal: 1, double: 2, triple: 3, quad: 4 }[o.status] || 1;
+  const dir = o.status === 'half' ? -1 : 1;
+  const color = COLORS.speed[o.status] || '#fff';
+  const a = Math.min(o.w / (n * 2.6), 6), b = o.h * 0.3, step = a * 2.2;
+  for (let i = 0; i < n; i++) chevron(ctx, o.cx + (i - (n - 1) / 2) * step, o.cy, a, b, color, dir);
+}
+function drawGravityPortalArt(ctx, o, pass, cols) {
+  if (drawPortalSpr(ctx, 'gravity_' + o.status, o.cx, o.cy, o.h, pass)) return;
+  if (pass === 'front') return;
+  const im = IMG['gravity_' + o.status];
+  if (im) { imageCentered(ctx, im, o.cx, o.cy, o.w, o.h); return; }
+  const color = COLORS.gravity[String(o.status)] || '#fff';
+  ring(ctx, o.cx, o.cy, o.w * 0.28, o.h * 0.47, color);
+  const d = o.status === -1 ? -1 : 1;
+  ctx.beginPath(); ctx.moveTo(o.cx - 4, o.cy - 3 * d); ctx.lineTo(o.cx, o.cy + 3 * d); ctx.lineTo(o.cx + 4, o.cy - 3 * d);
+  ctx.lineWidth = 2; ctx.strokeStyle = color; ctx.stroke();
+}
+function drawSizePortalArt(ctx, o, pass, cols) {
+  if (drawPortalSpr(ctx, 'size_' + o.status, o.cx, o.cy, o.h, pass)) return;
+  if (pass === 'front') return;
+  const im = IMG['size_' + o.status];
+  if (im) { imageCentered(ctx, im, o.cx, o.cy, o.w, o.h); return; }
+  const color = COLORS.size[o.status] || '#fff';
+  ring(ctx, o.cx, o.cy, o.w * 0.28, o.h * 0.47, color);
+  const s = o.status === 'mini' ? 2.5 : 4.5;
+  ctx.beginPath(); ctx.moveTo(o.cx, o.cy - s); ctx.lineTo(o.cx + s, o.cy); ctx.lineTo(o.cx, o.cy + s); ctx.lineTo(o.cx - s, o.cy); ctx.closePath();
+  ctx.fillStyle = color; ctx.fill();
+}
+function drawTeleporterArt(ctx, o, pass, cols) {
+  if (drawPortalSpr(ctx, 'teleIn', o.cx, o.cy1, o.h, pass)) { drawPortalSpr(ctx, 'teleOut', o.cx, o.cy2, o.h, pass); return; }
+  if (pass === 'front') return;
+  if (IMG.teleportIn) imageCentered(ctx, IMG.teleportIn, o.cx, o.cy1, o.w, o.h);
+  else ring(ctx, o.cx, o.cy1, o.w * 0.26, o.h * 0.46, COLORS.teleIn);
+  if (IMG.teleportOut) imageCentered(ctx, IMG.teleportOut, o.cx, o.cy2, o.w, o.h);
+  else ring(ctx, o.cx, o.cy2, o.w * 0.26, o.h * 0.46, COLORS.teleOut);
+}
+function drawPadArt(ctx, o, pass, cols) {
+  const g = gridSize;
+  if (drawSpr(ctx, 'bump_01_001', o.x + g / 2, o.y - 4 / 60 * g)) return;
+  if (IMG.pad) { ctx.drawImage(IMG.pad, o.x, o.y - PAD_H * g, g, PAD_H * g); return; }
+  ctx.beginPath(); ctx.ellipse(o.x + g / 2, o.y, g * 0.44, g * 0.24, 0, Math.PI, 0);
+  ctx.closePath(); ctx.fillStyle = '#ffe13d'; ctx.fill();
+  ctx.strokeStyle = '#3a2a00'; ctx.lineWidth = 1; ctx.stroke();
+}
+function drawOrbArt(ctx, o, pass, cols) {
+  const g = gridSize;
+  if (drawSpr(ctx, 'ring_01_001', o.x + g / 2, o.y - g / 2)) return;
+  if (IMG.orb) { ctx.drawImage(IMG.orb, o.x, o.y - g, g, g); return; }
+  const cx = o.x + g / 2, cy = o.y - g / 2;
+  ctx.beginPath(); ctx.arc(cx, cy, g * 0.44, 0, Math.PI * 2); ctx.strokeStyle = 'rgba(255,225,61,0.55)'; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx, cy, g * 0.32, 0, Math.PI * 2); ctx.fillStyle = '#ffe13d'; ctx.fill();
+  ctx.strokeStyle = '#3a2a00'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx, cy, g * 0.14, 0, Math.PI * 2); ctx.fillStyle = '#fff6c4'; ctx.fill();
+}
+function drawCoinArt(ctx, o, pass, cols) {
+  const g = gridSize;
+  // taken this attempt: it flies up and fades. Already saved: a see-through ghost.
+  let cy = o.cy, a = 1;
+  if (o.got) { const t = DRAW.now - o.gotAt; if (t > 0.6) return; cy -= t * 1.6 * g; a = 1 - t / 0.6; }
+  const lvl = DRAW.parts && DRAW.parts[o.part] ? DRAW.parts[o.part].id : null;
+  const ghost = !o.got && lvl && coinSaved(lvl, o.key);
+  const f = ghost ? 0 : DRAW.play ? Math.floor(DRAW.coinTime * 12) % COIN_FRAMES.length : 0;
+  const name = ghost ? 'secretCoin_2_b_01_001' : 'secretCoin_2_01_00' + COIN_FRAMES[f];
+  if (drawSpr(ctx, name, o.cx, cy, { alpha: a * (ghost ? 0.7 : 1), flipX: f >= 4 })) return;
+  ctx.save(); ctx.globalAlpha *= a * (ghost ? 0.45 : 1);
+  ctx.beginPath(); ctx.arc(o.cx, cy, g * 0.55, 0, Math.PI * 2); ctx.fillStyle = '#d9dde6'; ctx.fill();
+  ctx.lineWidth = 1.4; ctx.strokeStyle = '#000'; ctx.stroke();
+  ctx.font = 'bold ' + (g * 0.6) + 'px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#6c7280';
+  ctx.fillText('C', o.cx, cy + 0.5);
+  ctx.restore();
+}
+function drawTriggerArt(ctx, o, pass, cols) {
+  const g = gridSize;
+  if (DRAW.play) return;                       // triggers are invisible while playing
+  const color = o.t === 'ColorTrigger';
+  const icon = color ? 'edit_eTintCol01Btn_001' : 'edit_eAlphaBtn_001';
+  if (!drawSpr(ctx, icon, o.cx, o.cy - g * 0.06, { fit: [g * 0.9, g * 0.82] })) {
+    ctx.fillStyle = color ? '#3b3b3b' : '#20343f'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 0.8;
+    ctx.fillRect(o.x + 2, o.y - g + 2, g - 4, g - 4); ctx.strokeRect(o.x + 2, o.y - g + 2, g - 4, g - 4);
+    ctx.font = 'bold 5px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#fff';
+    ctx.fillText(color ? 'COL' : 'ALPHA', o.cx, o.cy - 3);
+  }
+  // what it changes: its channel (with a dot of the new color) or its group
+  const label = color ? chLabel(o.target) : 'G' + (o.group || '?');
+  ctx.font = 'bold 6px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.lineWidth = 2; ctx.strokeStyle = '#000'; ctx.strokeText(label, o.cx, o.y - 3.2);
+  ctx.fillStyle = o.touch ? '#9dff5c' : o.spawn ? '#ff9c5c' : '#fff'; ctx.fillText(label, o.cx, o.y - 3.2);
+  if (color) {
+    ctx.beginPath(); ctx.arc(o.x + g - 3.2, o.y - g + 3.2, 2.4, 0, Math.PI * 2);
+    ctx.fillStyle = rgbToHex(o.spec.player ? PLAYER_RGB[o.spec.player] : o.spec.rgb); ctx.fill();
+    ctx.lineWidth = 0.7; ctx.strokeStyle = '#000'; ctx.stroke();
+  }
+}
+function drawDecoArt(ctx, o, pass, cols) {
+  const a = o.fade ? fadeAlpha(o) : 1;
+  if (a <= 0.01) return;
+  if (drawLayered(ctx, o.spr, o.px, o.py, { rot: -o.angle, flipX: o.flip, alpha: a }, cols)) return;
+  // sheets not loaded (or "My pictures" chosen): a faint placeholder the size of the art
+  ctx.save(); ctx.translate(o.px, o.py); ctx.rotate(-o.angle); ctx.globalAlpha *= a;
+  ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 0.6;
+  ctx.fillRect(-o.sw / 2, -o.sh / 2, o.sw, o.sh); ctx.strokeRect(-o.sw / 2, -o.sh / 2, o.sw, o.sh);
+  ctx.restore();
 }
 
 // Drawing order: Z layer (B5 lowest, T4 highest), then the object's own draw
@@ -1766,53 +1771,47 @@ function iconsChanged() {
 }
 function iconsReset() { ICONS.src.clear(); ICONS.art.clear(); ICONS.sheet = null; kitUI.built = ''; iconsChanged(); }   // graphics quality changed
 
-// The ship and the cube, placed exactly like your render()
+// The ship and the cube, placed exactly like your render(). The icons come from the
+// icon kit, at Geometry Dash's size, with the cube sitting in the ship like in Geometry
+// Dash. Until an icon has loaded, simple shapes stand in for it.
 function drawPlayer(ctx, worldX, y, theta, s, grav, holding, opt = {}) {
-  const hbSize = gridSize * s;
-  const hbCY = (screenHeight - y) - hbSize / 2;
-  const flip = grav === -1;
-
-  // The icons from the icon kit, at Geometry Dash's size, with the cube sitting in the
-  // ship like in Geometry Dash. Until an icon has loaded, simple shapes stand in for it.
-  const look = opt.look || kit, cubeArt = kitArt('cube', look), shipArt = kitArt('ship', look);
+  const hbCY = (screenHeight - y) - gridSize * s / 2;
+  const look = opt.look || kit, flip = grav === -1;
   const shipDown = KIT_SHIP_DOWN * gridSize * s * grav;
-  const dx = 0, dy = -KIT_CUBE_UP * gridSize * s * grav;
+  const dx = 0, dy = -KIT_CUBE_UP * gridSize * s * grav;     // the cube sits up in the ship and turns with it
   const rX = dx * Math.cos(theta) - dy * Math.sin(theta);
   const rY = -dx * Math.sin(theta) + dy * Math.cos(theta);
-
-  // cube (drawn first, the ship goes on top)
+  inPose(ctx, worldX + rX, hbCY + rY + shipDown, theta, flip, () => drawCubeIcon(ctx, kitArt('cube', look), s));   // the ship goes on top
+  inPose(ctx, worldX, hbCY + shipDown, theta, flip, () => drawShipIcon(ctx, kitArt('ship', look), s, holding));
+}
+// Draws at (x, y), turned by theta, and upside down when gravity is flipped
+function inPose(ctx, x, y, theta, flip, draw) {
   ctx.save();
-  ctx.translate(worldX + rX, hbCY + rY + shipDown);
+  ctx.translate(x, y);
   ctx.rotate(theta);
   if (flip) ctx.scale(1, -1);
-  if (cubeArt) drawCentered(ctx, cubeArt, gridSize / cubeArt.ppb * KIT_CUBE_SCALE * s);
-  else {
-    const c = gridSize * KIT_CUBE_SCALE * s;
-    ctx.fillStyle = COLORS.shipMain; ctx.fillRect(-c / 2, -c / 2, c, c);
-    ctx.fillStyle = COLORS.shipTrim; ctx.fillRect(-c / 4, -c / 4, c / 2, c / 2);
-    ctx.strokeStyle = '#000'; ctx.lineWidth = 1.2; ctx.strokeRect(-c / 2, -c / 2, c, c);
-  }
+  draw();
   ctx.restore();
-
-  // ship
-  ctx.save();
-  ctx.translate(worldX, hbCY + shipDown);
-  ctx.rotate(theta);
-  if (flip) ctx.scale(1, -1);
-  if (shipArt) drawCentered(ctx, shipArt, gridSize / shipArt.ppb * s);
-  else {
-    ctx.scale(s * 0.66, s * 0.66);
-    if (holding) {
-      ctx.beginPath(); ctx.moveTo(-18, 1.5); ctx.lineTo(-27 - Math.random() * 3, 5); ctx.lineTo(-18, 8.5); ctx.closePath();
-      ctx.fillStyle = '#ffb02e'; ctx.fill();
-    }
-    tracePoly(ctx, [[-18.75, 1.5], [-13, -3.5], [4, -3.5], [18.75, 3], [12, 10], [-16.5, 10]]);
-    ctx.fillStyle = COLORS.shipMain; ctx.fill();
-    ctx.strokeStyle = '#000'; ctx.lineWidth = 1.4; ctx.lineJoin = 'round'; ctx.stroke();
-    tracePoly(ctx, [[-16.5, 3.8], [13.5, 3.8], [11.5, 6.6], [-16.5, 6.6]]);
-    ctx.fillStyle = COLORS.shipTrim; ctx.fill();
+}
+function drawCubeIcon(ctx, art, s) {
+  if (art) { drawCentered(ctx, art, gridSize / art.ppb * KIT_CUBE_SCALE * s); return; }
+  const c = gridSize * KIT_CUBE_SCALE * s;
+  ctx.fillStyle = COLORS.shipMain; ctx.fillRect(-c / 2, -c / 2, c, c);
+  ctx.fillStyle = COLORS.shipTrim; ctx.fillRect(-c / 4, -c / 4, c / 2, c / 2);
+  ctx.strokeStyle = '#000'; ctx.lineWidth = 1.2; ctx.strokeRect(-c / 2, -c / 2, c, c);
+}
+function drawShipIcon(ctx, art, s, holding) {
+  if (art) { drawCentered(ctx, art, gridSize / art.ppb * s); return; }
+  ctx.scale(s * 0.66, s * 0.66);
+  if (holding) {          // the flame while flying up
+    ctx.beginPath(); ctx.moveTo(-18, 1.5); ctx.lineTo(-27 - Math.random() * 3, 5); ctx.lineTo(-18, 8.5); ctx.closePath();
+    ctx.fillStyle = '#ffb02e'; ctx.fill();
   }
-  ctx.restore();
+  tracePoly(ctx, [[-18.75, 1.5], [-13, -3.5], [4, -3.5], [18.75, 3], [12, 10], [-16.5, 10]]);
+  ctx.fillStyle = COLORS.shipMain; ctx.fill();
+  ctx.strokeStyle = '#000'; ctx.lineWidth = 1.4; ctx.lineJoin = 'round'; ctx.stroke();
+  tracePoly(ctx, [[-16.5, 3.8], [13.5, 3.8], [11.5, 6.6], [-16.5, 6.6]]);
+  ctx.fillStyle = COLORS.shipTrim; ctx.fill();
 }
 
 // Draws a picture at (0, 0) by its middle (ax, ay for icons), k = how much bigger
@@ -1989,26 +1988,34 @@ function startPlay(mode, opts = {}) {
   restart();
 }
 
+// A new attempt from the start (a run gets new random levels)
 function restart() {
   if (game.mode === 'run') world = new World(shuffle(game.pool.slice()).slice(0, LEVELS_PER_RUN));
   else world.reset();
   scrollX = game.startScroll;
   setSpeed(initialSpeed);
-  game.deathHitboxes = false;
   Me.reset();
+  game.time = 0; game.trail = []; game.runCoins = 0;
+  game.checkpoints = []; game.cpNext = CP_EVERY; game.cpPending = null;
+  beginAttempt();
+  fireTriggersBehindShip();
+  hideOverlay();
+  updateHud(true);
+}
+// What every attempt starts with, from the start or from a checkpoint
+function beginAttempt() {
+  game.deathHitboxes = false;
   game.dead = false; game.finished = false; game.paused = false; game.acc = 0;
   game.attempts++;
   game.attemptX = scrollX + shipCenterX + 150;
-  game.trail = [];
   game.prevScroll = scrollX; game.prevY = Me.y; game.prevTheta = Me.theta;
   game.nc = { steps: 0, dead: 0, deaths: 0, was: false }; game.clicks = 0;
-  game.time = 0; game.coinPart = world.partAt(shipCenterX + scrollX); game.cheated = cheatsOn(); game.runCoins = 0; game.stage = null;
-  game.checkpoints = []; game.cpNext = CP_EVERY; game.cpPending = null;
-  // Testing from the middle: triggers behind the ship have already happened (no fade)
+  game.coinPart = world.partAt(shipCenterX + scrollX); game.cheated = cheatsOn(); game.stage = null;
+}
+// Testing from the middle: triggers behind the ship have already happened (no fade)
+function fireTriggersBehindShip() {
   const sx0 = shipCenterX + scrollX, xt = world.xTriggers;
   while (world.nextTrigger < xt.length && xt[world.nextTrigger].tx < sx0) fireTrigger(xt[world.nextTrigger++], 0, true);
-  hideOverlay();
-  updateHud(true);
 }
 
 // --- practice mode: checkpoints (the green diamonds) ---
@@ -2051,6 +2058,14 @@ function practiceStep() {
 function respawn() {
   const cp = game.practice && game.checkpoints[game.checkpoints.length - 1];
   if (!cp) { restart(); return; }
+  goToCheckpoint(cp);
+  beginAttempt();
+  game.cpPending = null; game.cpNext = game.time + CP_EVERY;
+  hideOverlay();
+  updateHud(true);
+}
+// Puts the level and the ship back the way they were at a checkpoint
+function goToCheckpoint(cp) {
   world.reset();
   for (const o of cp.used) o.used = true;
   for (const o of cp.fired) fireTrigger(o, 0, true);
@@ -2060,16 +2075,6 @@ function respawn() {
   Me.setSize(cp.me.size);
   Object.assign(Me, { y: cp.me.y, vy: cp.me.vy, theta: cp.me.theta, onGround: cp.me.onGround, gravity: cp.me.gravity });
   Me.syncHitbox(); Me.render();
-  game.deathHitboxes = false;
-  game.dead = false; game.finished = false; game.paused = false; game.acc = 0;
-  game.attempts++;
-  game.attemptX = scrollX + shipCenterX + 150;
-  game.prevScroll = scrollX; game.prevY = Me.y; game.prevTheta = Me.theta;
-  game.nc = { steps: 0, dead: 0, deaths: 0, was: false }; game.clicks = 0;
-  game.coinPart = world.partAt(shipCenterX + scrollX); game.cheated = cheatsOn(); game.stage = null;
-  game.cpPending = null; game.cpNext = game.time + CP_EVERY;
-  hideOverlay();
-  updateHud(true);
 }
 // The pause menu's PRACTICE / NORMAL switch
 function togglePractice() {
@@ -2126,21 +2131,14 @@ function keepCoins(pi) {
 
 // One CMU onStep
 function step() {
-  game.prevScroll = scrollX; game.prevY = Me.y; game.prevTheta = Me.theta;
+  game.prevScroll = scrollX; game.prevY = Me.y; game.prevTheta = Me.theta;     // for drawing between steps
   game.teleported = false;
   if (!Me.alive) return;
   Me.clipped = false;
   Me.Update();
   pressed = false;
   Me.render();
-  // Noclip Accuracy: the share of steps not spent inside something deadly.
-  // Noclip Deaths: how many times the ship went from safe to "would be dead".
-  if (Me.clipped || hk('noclip')) {
-    const nc = game.nc;
-    nc.steps++;
-    if (Me.clipped) { nc.dead++; if (!nc.was) nc.deaths++; }
-    nc.was = Me.clipped;
-  }
+  countNoclip();
   for (const saw of world.saws) saw.spin += sawSpin * 360 * dt;
   if (game.mode === 'test' && game.trail.length < 30000) game.trail.push([shipCenterX + scrollX, Me.hb.bottom - Me.hb.size / 2]);
   playSpecials();
@@ -2149,6 +2147,15 @@ function step() {
   practiceStep();
   if (!Me.alive) onDeath();
   else if (shipCenterX + scrollX >= world.endPx) onFinish();
+}
+// Noclip Accuracy: the share of steps not spent inside something deadly.
+// Noclip Deaths: how many times the ship went from safe to "would be dead".
+function countNoclip() {
+  if (!Me.clipped && !hk('noclip')) return;
+  const nc = game.nc;
+  nc.steps++;
+  if (Me.clipped) { nc.dead++; if (!nc.was) nc.deaths++; }
+  nc.was = Me.clipped;
 }
 
 function onDeath() {
@@ -2311,50 +2318,59 @@ function fitGameCanvas() {
 
 function drawGame() {
   const ctx = gameCtx, k = game.cssScale * game.dpr;
-  const frozen = game.dead || game.finished || game.paused;
-  const a = frozen ? 1 : Math.min(1, game.acc / dt);
-  const sI = game.prevScroll + (scrollX - game.prevScroll) * a;
-  const jump = game.teleported || Math.abs(Me.y - game.prevY) > 2 * gridSize;
-  const yI = jump ? Me.y : game.prevY + (Me.y - game.prevY) * a;
-  const thI = game.prevTheta + (Me.theta - game.prevTheta) * a;
-  const now = game.time + (frozen ? 0 : Math.min(game.acc, dt));
+  const v = betweenSteps();
   const layout = hk('layout');
-  DRAW.parts = world.parts; DRAW.now = now; DRAW.play = true; DRAW.layout = layout; DRAW.coinTime = performance.now() / 1000;
-  let st = stageColors(sI, now);
+  DRAW.parts = world.parts; DRAW.now = v.now; DRAW.play = true; DRAW.layout = layout; DRAW.coinTime = performance.now() / 1000;
+  let st = stageColors(v.scroll, v.now);
   if (layout) st = { bg: CH_DEFAULT[CH.BG], ground: CH_DEFAULT[CH.GROUND], line: [255, 255, 255] };
 
   // The camera only changes where things are drawn. The ship is still at
   // shipCenterX + scrollX in the level, exactly like CMU.
-  const camL = sI + shipCenterX - SHIP_SCREEN_X;
+  const camL = v.scroll + shipCenterX - SHIP_SCREEN_X, wx = shipCenterX + v.scroll;
   ctx.setTransform(k, 0, 0, k, 0, 0);
   drawSky(ctx, VIEW_WIDTH, 400, st.bg, camL);
   ctx.setTransform(k, 0, 0, k, -camL * k, 0);
-  if (gdFont && settings.showAttempts && game.attemptX > camL - 200) {
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    outlinedText(ctx, 'Attempt ' + game.attempts, game.attemptX, 172, 22, 5);
-  }
+  drawAttemptText(ctx, camL);
   let vis = world.visible(camL, camL + VIEW_WIDTH);
   if (layout) vis = vis.filter(o => o.kind !== 'none');   // Show Layout: no deco, only objects with a hitbox
-  const wx = shipCenterX + sI;
-  // B layers (and objects with no Z layer) go behind the ship, T layers in front of it
+  drawLevelAndShip(ctx, vis, camL, wx, v, layout);
+  // the floor and ceiling go over everything, so anything reaching past them is hidden (like Geometry Dash)
+  drawStage(ctx, camL, camL + VIEW_WIDTH, 0, 400, st.ground, st.line);
+  if (game.deathHitboxes || hk('hitboxes')) drawHitboxes(ctx, vis, { worldX: wx, y: v.y, sizeScale: Me.sizeScale, rot: Me.rot });
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  if (Me.clipped && hk('ncTint')) { ctx.fillStyle = 'rgba(255, 0, 0, 0.22)'; ctx.fillRect(0, 0, gameCanvas.width, gameCanvas.height); }
+  DRAW.parts = null; DRAW.play = false; DRAW.layout = false; DRAW.now = 0;
+  updateHud(false);
+}
+// Where the camera and the ship are right now, between the last two physics steps,
+// so the game looks smooth on any screen
+function betweenSteps() {
+  const frozen = game.dead || game.finished || game.paused;
+  const a = frozen ? 1 : Math.min(1, game.acc / dt);
+  const jump = game.teleported || Math.abs(Me.y - game.prevY) > 2 * gridSize;
+  return {
+    scroll: game.prevScroll + (scrollX - game.prevScroll) * a,
+    y: jump ? Me.y : game.prevY + (Me.y - game.prevY) * a,
+    theta: game.prevTheta + (Me.theta - game.prevTheta) * a,
+    now: game.time + (frozen ? 0 : Math.min(game.acc, dt)),
+  };
+}
+function drawAttemptText(ctx, camL) {
+  if (!gdFont || !settings.showAttempts || game.attemptX <= camL - 200) return;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  outlinedText(ctx, 'Attempt ' + game.attempts, game.attemptX, 172, 22, 5);
+}
+// B layers (and objects with no Z layer) go behind the ship, T layers in front of it
+function drawLevelAndShip(ctx, vis, camL, wx, v, layout) {
   const behind = [], front = [];
   for (const o of vis) (o.zRank >= Z_FRONT ? front : behind).push(o);
   fadeShipX = layout ? null : wx;
   drawObjects(ctx, behind, 'back');
   drawCheckpoints(ctx, camL);
-  if (!hk('hidePlayer')) drawPlayer(ctx, wx, yI, thI, Me.sizeScale, Me.gravity, upInput && Me.alive);
+  if (!hk('hidePlayer')) drawPlayer(ctx, wx, v.y, v.theta, Me.sizeScale, Me.gravity, upInput && Me.alive);
   drawPortalFronts(ctx, behind);
   if (front.length) drawObjects(ctx, front);
   fadeShipX = null;
-  // the floor and ceiling go over everything, so anything reaching past them is hidden (like Geometry Dash)
-  drawStage(ctx, camL, camL + VIEW_WIDTH, 0, 400, st.ground, st.line);
-  if (game.deathHitboxes || hk('hitboxes')) {
-    drawHitboxes(ctx, vis, { worldX: wx, y: yI, sizeScale: Me.sizeScale, rot: Me.rot });
-  }
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  if (Me.clipped && hk('ncTint')) { ctx.fillStyle = 'rgba(255, 0, 0, 0.22)'; ctx.fillRect(0, 0, gameCanvas.width, gameCanvas.height); }
-  DRAW.parts = null; DRAW.play = false; DRAW.layout = false; DRAW.now = 0;
-  updateHud(false);
 }
 // BG, GROUND and LINE come from the level the ship is in. When a run moves on
 // to the next level they blend over half a second.
@@ -2579,7 +2595,10 @@ function hackMenuEvents(m) {
     hacks.speed = clampSpeed(e.target.value); e.target.value = hacks.speed; saveHacks();
     renderHackMenu();
   });
-  // dragging a window by its title
+  dragHackWindows(m);
+}
+// dragging a window by its title; where it ends up is remembered
+function dragHackWindows(m) {
   let drag = null;
   m.addEventListener('pointerdown', e => {
     const head = e.target.closest('.hk-head');
@@ -3415,17 +3434,36 @@ function drawEditor() {
   const ctx = edCtx, { w: W, h: H } = ed.css, dpr = ed.dpr, c = ed.cam;
   if (!W || !ed.level) return;
   const k = c.scale * dpr, g = gridSize;
-  const x0 = c.x, x1 = c.x + W / c.scale, y0 = c.y, y1 = c.y + H / c.scale;
+  const view = { x0: c.x, x1: c.x + W / c.scale, y0: c.y, y1: c.y + H / c.scale };
+  view.cs = Math.max(1, Math.floor(view.x0 / g)); view.ce = Math.ceil(view.x1 / g);
   DRAW.parts = null; DRAW.cs = ed.cs; DRAW.now = 0; DRAW.play = false;
   const sc = id => { const v = ed.cs.resolve(id, 0); return [v.r, v.g, v.b]; };
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   drawSky(ctx, W, H, sc(CH.BG), c.x, Math.max(H, 400 * c.scale));
   ctx.setTransform(k, 0, 0, k, -c.x * k, -c.y * k);
-
-  // grid
-  const cs = Math.max(1, Math.floor(x0 / g)), ce = Math.ceil(x1 / g);
-  if (settings.edGrid) {
-  ctx.lineWidth = 1 / c.scale;
+  if (settings.edGrid) drawEdGrid(ctx, view, c.scale);
+  drawEdStart(ctx);
+  const endX = levelEndCol(ed.level) * g;
+  drawEdEndLine(ctx, endX, c.scale);
+  const vis = ed.built.filter(o => o.cx > view.x0 - 140 && o.cx < view.x1 + 140);
+  DRAW.fade = edFade;                // other editor layers and hidden objects are see-through
+  drawObjects(ctx, vis);
+  DRAW.fade = null;
+  // the floor and ceiling cover whatever reaches past them, as in the game
+  drawStage(ctx, view.x0, view.x1, view.y0, view.y1, sc(CH.GROUND), sc(CH.LINE));
+  drawTeleportLinks(ctx, vis, c.scale);
+  if (settings.edHitboxes) drawHitboxes(ctx, vis, null);
+  if (settings.edTrail && ed.trail && ed.trail.pts.length > 1) drawEdTrail(ctx, ed.trail, c.scale);
+  drawEdSelection(ctx, c.scale);
+  drawEdHover(ctx, c.scale);
+  if (ed.drag && ed.drag.type === 'box') drawEdBoxSelect(ctx, ed.drag, c.scale);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  drawEdLabels(ctx, view, endX);
+  DRAW.cs = DEFAULT_COLORS;
+}
+function drawEdGrid(ctx, { x0, x1, cs, ce }, zoom) {
+  const g = gridSize;
+  ctx.lineWidth = 1 / zoom;
   ctx.beginPath(); ctx.strokeStyle = 'rgba(0,0,40,0.28)';
   for (let col = cs; col <= ce; col++) { if (col % 5) { ctx.moveTo(col * g, 100); ctx.lineTo(col * g, 300); } }
   for (let y = 120; y < 300; y += g) { ctx.moveTo(Math.max(0, x0), y); ctx.lineTo(x1, y); }
@@ -3434,82 +3472,72 @@ function drawEditor() {
   for (let col = Math.ceil(cs / 5) * 5; col <= ce; col += 5) { ctx.moveTo(col * g, 100); ctx.lineTo(col * g, 300); }
   ctx.moveTo(0, 100); ctx.lineTo(0, 300);
   ctx.stroke();
-  }
-
-  // where the ship starts (columns 1-8 are behind it when this level is first)
+}
+// where the ship starts (columns 1-8 are behind it when this level is first)
+function drawEdStart(ctx) {
   ctx.fillStyle = 'rgba(0,0,30,0.25)'; ctx.fillRect(0, 100, 150, 200);
   ctx.globalAlpha = 0.55; drawPlayer(ctx, shipCenterX, position, 0, 1, 1, false); ctx.globalAlpha = 1;
-
-  // END line
-  const endX = levelEndCol(ed.level) * g;
-  ctx.strokeStyle = '#ffb300'; ctx.lineWidth = 2.5 / c.scale; ctx.setLineDash([6 / c.scale, 4 / c.scale]);
+}
+function drawEdEndLine(ctx, endX, zoom) {
+  ctx.strokeStyle = '#ffb300'; ctx.lineWidth = 2.5 / zoom; ctx.setLineDash([6 / zoom, 4 / zoom]);
   ctx.beginPath(); ctx.moveTo(endX, 100); ctx.lineTo(endX, 300); ctx.stroke(); ctx.setLineDash([]);
-
-  // objects
-  const vis = ed.built.filter(o => o.cx > x0 - 140 && o.cx < x1 + 140);
-  DRAW.fade = edFade;                // other editor layers and hidden objects are see-through
-  drawObjects(ctx, vis);
-  DRAW.fade = null;
-  // the floor and ceiling cover whatever reaches past them, as in the game
-  drawStage(ctx, x0, x1, y0, y1, sc(CH.GROUND), sc(CH.LINE));
-
-  // teleport links
-  ctx.setLineDash([3 / c.scale, 3 / c.scale]); ctx.lineWidth = 1.2 / c.scale; ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+}
+function drawTeleportLinks(ctx, vis, zoom) {
+  ctx.setLineDash([3 / zoom, 3 / zoom]); ctx.lineWidth = 1.2 / zoom; ctx.strokeStyle = 'rgba(255,255,255,0.8)';
   for (const o of vis) if (o.t === 'TelePortal') { ctx.beginPath(); ctx.moveTo(o.cx, o.cy1); ctx.lineTo(o.cx, o.cy2); ctx.stroke(); }
   ctx.setLineDash([]);
-
-  if (settings.edHitboxes) drawHitboxes(ctx, vis, null);
-
-  // last test flight
-  if (settings.edTrail && ed.trail && ed.trail.pts.length > 1) {
-    const pts = ed.trail.pts;
-    ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
-    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
-    ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 3.6 / c.scale; ctx.stroke();
-    ctx.strokeStyle = '#ffe14d'; ctx.lineWidth = 1.8 / c.scale; ctx.stroke();
-    if (ed.trail.died) {
-      const [lx, ly] = pts[pts.length - 1], r = 5;
-      ctx.beginPath(); ctx.moveTo(lx - r, ly - r); ctx.lineTo(lx + r, ly + r); ctx.moveTo(lx + r, ly - r); ctx.lineTo(lx - r, ly + r);
-      ctx.strokeStyle = '#000'; ctx.lineWidth = 5 / c.scale; ctx.stroke();
-      ctx.strokeStyle = '#ff3b2f'; ctx.lineWidth = 2.6 / c.scale; ctx.stroke();
-    }
+}
+// the last test flight, with an X where it died
+function drawEdTrail(ctx, trail, zoom) {
+  const pts = trail.pts;
+  ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+  outlinedStroke(ctx, 'rgba(0,0,0,0.55)', 3.6 / zoom, '#ffe14d', 1.8 / zoom);
+  if (trail.died) {
+    const [lx, ly] = pts[pts.length - 1], r = 5;
+    ctx.beginPath(); ctx.moveTo(lx - r, ly - r); ctx.lineTo(lx + r, ly + r); ctx.moveTo(lx + r, ly - r); ctx.lineTo(lx - r, ly + r);
+    outlinedStroke(ctx, '#000', 5 / zoom, '#ff3b2f', 2.6 / zoom);
   }
-
-  // selection
+}
+function outlinedStroke(ctx, outline, outlineWidth, color, width) {
+  ctx.strokeStyle = outline; ctx.lineWidth = outlineWidth; ctx.stroke();
+  ctx.strokeStyle = color; ctx.lineWidth = width; ctx.stroke();
+}
+function strokeBox(ctx, b) { ctx.strokeRect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0); }
+function drawEdSelection(ctx, zoom) {
   for (const d of ed.sel) {
     const o = ed.byDef.get(d); if (!o) continue;
     for (const b of objBoxes(o)) {
-      ctx.lineWidth = 4 / c.scale; ctx.strokeStyle = '#000'; ctx.strokeRect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0);
-      ctx.lineWidth = 2 / c.scale; ctx.strokeStyle = '#6dff3a'; ctx.strokeRect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0);
+      ctx.lineWidth = 4 / zoom; ctx.strokeStyle = '#000'; strokeBox(ctx, b);
+      ctx.lineWidth = 2 / zoom; ctx.strokeStyle = '#6dff3a'; strokeBox(ctx, b);
     }
   }
-
-  // hover
-  const hv = ed.hover;
-  if (hv && ed.mode !== 'view' && (!ed.drag || ed.drag.type === 'paint')) {
-    if (ed.mode === 'build' && hv.Y >= 1 && hv.Y <= 10 && hv.X >= 1) {
-      ctx.globalAlpha = 0.5; drawObject(ctx, makeObject(brushDef(hv.X, hv.Y))); ctx.globalAlpha = 1;
-      ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 1.2 / c.scale;
-      ctx.strokeRect((hv.X - 1) * g, 300 - hv.Y * g, g, g);
-    } else if (ed.mode !== 'build') {
-      const d = edPick(hv.wx, hv.wy), o = d && ed.byDef.get(d);
-      if (o) {
-        ctx.strokeStyle = ed.mode === 'delete' ? '#ff3b2f' : 'rgba(255,255,255,0.9)'; ctx.lineWidth = 2 / c.scale;
-        for (const b of objBoxes(o)) ctx.strokeRect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0);
-      }
+}
+// build mode shows the object about to be placed; the other modes outline the object under the mouse
+function drawEdHover(ctx, zoom) {
+  const hv = ed.hover, g = gridSize;
+  if (!hv || ed.mode === 'view' || (ed.drag && ed.drag.type !== 'paint')) return;
+  if (ed.mode === 'build' && hv.Y >= 1 && hv.Y <= 10 && hv.X >= 1) {
+    ctx.globalAlpha = 0.5; drawObject(ctx, makeObject(brushDef(hv.X, hv.Y))); ctx.globalAlpha = 1;
+    ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 1.2 / zoom;
+    ctx.strokeRect((hv.X - 1) * g, 300 - hv.Y * g, g, g);
+  } else if (ed.mode !== 'build') {
+    const d = edPick(hv.wx, hv.wy), o = d && ed.byDef.get(d);
+    if (o) {
+      ctx.strokeStyle = ed.mode === 'delete' ? '#ff3b2f' : 'rgba(255,255,255,0.9)'; ctx.lineWidth = 2 / zoom;
+      for (const b of objBoxes(o)) strokeBox(ctx, b);
     }
   }
-
-  // box select
-  if (ed.drag && ed.drag.type === 'box') {
-    const b = ed.drag;
-    ctx.fillStyle = 'rgba(109,255,58,0.14)'; ctx.strokeStyle = '#6dff3a'; ctx.lineWidth = 1.5 / c.scale;
-    ctx.fillRect(Math.min(b.x0, b.x1), Math.min(b.y0, b.y1), Math.abs(b.x1 - b.x0), Math.abs(b.y1 - b.y0));
-    ctx.strokeRect(Math.min(b.x0, b.x1), Math.min(b.y0, b.y1), Math.abs(b.x1 - b.x0), Math.abs(b.y1 - b.y0));
-  }
-
-  // column numbers, END and START labels (screen pixels so they stay sharp)
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+function drawEdBoxSelect(ctx, b, zoom) {
+  const x = Math.min(b.x0, b.x1), y = Math.min(b.y0, b.y1), w = Math.abs(b.x1 - b.x0), h = Math.abs(b.y1 - b.y0);
+  ctx.fillStyle = 'rgba(109,255,58,0.14)'; ctx.strokeStyle = '#6dff3a'; ctx.lineWidth = 1.5 / zoom;
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeRect(x, y, w, h);
+}
+// column numbers, END and START labels (screen pixels so they stay sharp)
+function drawEdLabels(ctx, { cs, ce }, endX) {
+  const c = ed.cam, g = gridSize;
   const toSX = wx => (wx - c.x) * c.scale, toSY = wy => (wy - c.y) * c.scale;
   ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
   const every = c.scale * g >= 26 ? 1 : 5;
@@ -3520,7 +3548,6 @@ function drawEditor() {
   ctx.textBaseline = 'top';
   outlinedText(ctx, 'END', toSX(endX), toSY(300) + 7, 12, 3.5, '#ffd21f');
   outlinedText(ctx, 'START', toSX(shipCenterX), toSY(300) + 7, 12, 3.5);
-  DRAW.cs = DEFAULT_COLORS;
 }
 
 // --- the panels over the canvas ---
@@ -3532,6 +3559,16 @@ function field(label, input, wide) { return `<label class="field${wide ? ' wide'
 function edRenderUI() {
   if (!ed.level) return;
   $('edName').textContent = ed.level.name;
+  showEdWarnings();
+  showModeTab();
+  $('rotVal').textContent = ed.rot + '°';
+  showEdButtons();
+  showEdLayerNum();
+  for (const b of document.querySelectorAll('#edToggles [data-tog]')) b.setAttribute('aria-pressed', String(settings[b.dataset.tog]));
+  $('edCoords').hidden = !settings.edCoords;
+  renderProps();
+}
+function showEdWarnings() {
   const w = ed.warnings;
   const warn = $('edWarn');
   warn.hidden = !w.length || !settings.edWarnings;
@@ -3539,8 +3576,9 @@ function edRenderUI() {
   const badge = $('edBadge');
   badge.hidden = !w.length;
   badge.textContent = String(w.length);
-  showModeTab();
-  $('rotVal').textContent = ed.rot + '°';
+}
+// selection count, and which buttons can be used right now
+function showEdButtons() {
   const n = ed.sel.size;
   $('selCount').textContent = n ? `· ${n} SELECTED` : '';
   $('edTrash').disabled = !n;
@@ -3553,14 +3591,13 @@ function edRenderUI() {
     const a = b.dataset.act;
     b.disabled = a === 'paste' ? !ed.clip : a === 'selall' ? !ed.level.objects.length : a === 'golayer' ? false : !n;
   }
-  // the layer number: ALL, or the layer (orange when it is locked)
+}
+// the layer number: ALL, or the layer (orange when it is locked)
+function showEdLayerNum() {
   const ln = $('edLayerNum'), locked = ed.edLayer >= 0 && ed.lockedLayers.has(ed.edLayer);
   ln.textContent = ed.edLayer < 0 ? 'ALL' : String(ed.edLayer);
   ln.classList.toggle('locked', locked);
   ln.title = ed.edLayer < 0 ? 'Showing every editor layer' : `Layer ${ed.edLayer}${locked ? ' (locked)' : ''}: click to ${locked ? 'unlock' : 'lock'} it`;
-  for (const b of document.querySelectorAll('#edToggles [data-tog]')) b.setAttribute('aria-pressed', String(settings[b.dataset.tog]));
-  $('edCoords').hidden = !settings.edCoords;
-  renderProps();
 }
 
 // The COLOR / DETAIL buttons: a swatch and the channel's name ("MIXED" when the selection differs)
@@ -3577,52 +3614,61 @@ function renderProps() {
   const box = $('edSel'), list = selectedList();
   if (!list.length || !settings.edInfo) { box.hidden = true; box.innerHTML = ''; return; }
   box.hidden = false;
-  let html = '';
-  if (list.length > 1) html += `<span class="sel-name o">${list.length} OBJECTS SELECTED</span>`;
-  else {
-    const d = list[0], t = d[0];
-    html += `<span class="sel-name o">${esc(typeLabel(d).toUpperCase())}</span>`;
-    html += field('X', `<input class="gd-input" type="number" data-i="1" step="any" value="${d[1]}" aria-label="Column">`);
-    html += field(t === 'TelePortal' ? 'ENTRY Y' : 'Y', `<input class="gd-input" type="number" data-i="2" step="any" value="${d[2]}" aria-label="Row">`);
-    if (isRotatable(t)) {
-      const a = Number(getArg(d, 3)) || 0, opts = [0, 90, 180, 270];
-      if (!opts.includes(a)) opts.push(a);
-      const names = isFlippable(t) ? {} : { 0: 'UP', 90: 'LEFT', 180: 'DOWN', 270: 'RIGHT' };
-      html += field(isFlippable(t) ? 'TURN' : 'POINTS', `<select class="gd-input" data-i="3" aria-label="Direction">${opts.map(v => `<option value="${v}"${v === a ? ' selected' : ''}>${names[v] || v + '°'}</option>`).join('')}</select>`, true);
-    } else if (PORTALS[t]) {
-      const vals = Object.keys(PORTALS[t].variants);
-      html += field('TYPE', `<select class="gd-input" data-i="3" aria-label="Portal type">${vals.map(v => `<option value="${v}"${String(getArg(d, 3)) === v ? ' selected' : ''}>${esc(itemLabel([t, v]).toUpperCase())}</option>`).join('')}</select>`, true);
-    } else if (t === 'TelePortal') {
-      html += field('EXIT Y', `<input class="gd-input" type="number" data-i="3" step="any" value="${getArg(d, 3) ?? d[2]}" aria-label="Exit row">`);
-    }
-    if (isTrigger(t)) html += `<button class="gd-btn small" type="button" data-edit-trigger>EDIT TRIGGER</button>`;
+  const html = (list.length > 1 ? `<span class="sel-name o">${list.length} OBJECTS SELECTED</span>` : oneObjectProps(list[0]))
+    + sawSizeProp(list) + colorProps(list) + layerProps(list) + groupProp(list);
+  ed.renderingProps = true;          // replacing a focused box fires its change event again: ignore that one
+  try { box.innerHTML = html; } finally { ed.renderingProps = false; }
+}
+// name, X, Y and whatever else this kind of object has
+function oneObjectProps(d) {
+  const t = d[0];
+  let html = `<span class="sel-name o">${esc(typeLabel(d).toUpperCase())}</span>`;
+  html += field('X', `<input class="gd-input" type="number" data-i="1" step="any" value="${d[1]}" aria-label="Column">`);
+  html += field(t === 'TelePortal' ? 'ENTRY Y' : 'Y', `<input class="gd-input" type="number" data-i="2" step="any" value="${d[2]}" aria-label="Row">`);
+  if (isRotatable(t)) {
+    const a = Number(getArg(d, 3)) || 0, opts = [0, 90, 180, 270];
+    if (!opts.includes(a)) opts.push(a);
+    const names = isFlippable(t) ? {} : { 0: 'UP', 90: 'LEFT', 180: 'DOWN', 270: 'RIGHT' };
+    html += field(isFlippable(t) ? 'TURN' : 'POINTS', `<select class="gd-input" data-i="3" aria-label="Direction">${opts.map(v => `<option value="${v}"${v === a ? ' selected' : ''}>${names[v] || v + '°'}</option>`).join('')}</select>`, true);
+  } else if (PORTALS[t]) {
+    const vals = Object.keys(PORTALS[t].variants);
+    html += field('TYPE', `<select class="gd-input" data-i="3" aria-label="Portal type">${vals.map(v => `<option value="${v}"${String(getArg(d, 3)) === v ? ' selected' : ''}>${esc(itemLabel([t, v]).toUpperCase())}</option>`).join('')}</select>`, true);
+  } else if (t === 'TelePortal') {
+    html += field('EXIT Y', `<input class="gd-input" type="number" data-i="3" step="any" value="${getArg(d, 3) ?? d[2]}" aria-label="Exit row">`);
   }
-  // saw size: one saw or many, changes live while the slider moves
+  if (isTrigger(t)) html += `<button class="gd-btn small" type="button" data-edit-trigger>EDIT TRIGGER</button>`;
+  return html;
+}
+// saw size: one saw or many, changes live while the slider moves
+function sawSizeProp(list) {
   const saws = list.filter(d => d[0] === 'Saw');
-  if (saws.length && saws.length === list.length) {
-    const sz = Math.min(SAW_MAX, Math.max(SAW_MIN, Number(getArg(saws[0], 3)) || 1));
-    html += `<label class="field wide saw-field"><span class="field-label">SIZE <span class="saw-val">${sz.toFixed(2)}×</span></span>
+  if (!saws.length || saws.length !== list.length) return '';
+  const sz = Math.min(SAW_MAX, Math.max(SAW_MIN, Number(getArg(saws[0], 3)) || 1));
+  return `<label class="field wide saw-field"><span class="field-label">SIZE <span class="saw-val">${sz.toFixed(2)}×</span></span>
       <input class="gd-range" type="range" data-saw min="${SAW_MIN}" max="${SAW_MAX}" step="0.05" value="${sz}" aria-label="Saw size"></label>`;
-  }
+}
+function colorProps(list) {
   const col = list.filter(isColorable), det = list.filter(hasDetail);
   const chipField = (label, kind, l) => `<div class="field ch-field"><span class="field-label">${label}</span>${chipHTML(kind, l)}</div>`;
-  if (col.length) html += chipField('COLOR', 'main', col);
-  if (det.length) html += chipField('DETAIL', 'detail', det);
-  // editor layer(s), and the group IDs (the button opens EDIT GROUP)
-  const shared = f => { const v = f(list[0]); return list.every(d => f(d) === v) ? v : null; };
-  const lay = shared(d => { const o = ed.byDef.get(d); return o.edL + (o.edL2 > 0 && o.edL2 !== o.edL ? ', ' + o.edL2 : ''); });
-  html += `<button type="button" class="field sel-layer" data-golayer title="GO TO LAYER: show only this editor layer"><span class="field-label">LAYER</span><span class="sel-val o">${lay === null ? 'MIXED' : lay}</span></button>`;
-  // a copy of the layer row under GO TO LAYER, shown only on a short phone, where this panel covers that row
+  return (col.length ? chipField('COLOR', 'main', col) : '') + (det.length ? chipField('DETAIL', 'detail', det) : '');
+}
+// the value every selected object shares, or null when they differ
+function sharedValue(list, f) { const v = f(list[0]); return list.every(d => f(d) === v) ? v : null; }
+// editor layer(s), plus a copy of the layer row under GO TO LAYER, shown only on a short phone, where this panel covers that row
+function layerProps(list) {
+  const lay = sharedValue(list, d => { const o = ed.byDef.get(d); return o.edL + (o.edL2 > 0 && o.edL2 !== o.edL ? ', ' + o.edL2 : ''); });
   const ln = $('edLayerNum');
-  html += `<div class="sel-layers" role="group" aria-label="Editor layer">
+  return `<button type="button" class="field sel-layer" data-golayer title="GO TO LAYER: show only this editor layer"><span class="field-label">LAYER</span><span class="sel-val o">${lay === null ? 'MIXED' : lay}</span></button>`
+    + `<div class="sel-layers" role="group" aria-label="Editor layer">
     <button class="layer-arrow all" type="button" data-layer="all" title="Show all layers" aria-label="Show all layers"><svg aria-hidden="true"><use href="#i-page"/></svg></button>
     <button class="layer-arrow" type="button" data-layer="-1" title="Previous layer" aria-label="Previous layer"><svg aria-hidden="true"><use href="#i-page-pink"/></svg></button>
     <button class="layer-num o${ln.classList.contains('locked') ? ' locked' : ''}" type="button" data-layer="lock" title="${esc(ln.title)}">${ln.textContent}</button>
     <button class="layer-arrow right" type="button" data-layer="1" title="Next layer" aria-label="Next layer"><svg aria-hidden="true"><use href="#i-page-pink"/></svg></button></div>`;
-  const gs = shared(d => ed.byDef.get(d).groups.join(', '));
-  html += `<div class="field ch-field"><span class="field-label">GROUPS</span><button class="ch-chip" type="button" data-open-egroup title="Edit Group: group IDs, editor layers, Z layer"><span class="ch-name">${gs === null ? 'MIXED' : gs || 'NONE'}</span></button></div>`;
-  ed.renderingProps = true;          // replacing a focused box fires its change event again: ignore that one
-  try { box.innerHTML = html; } finally { ed.renderingProps = false; }
+}
+// the group IDs (the button opens EDIT GROUP)
+function groupProp(list) {
+  const gs = sharedValue(list, d => ed.byDef.get(d).groups.join(', '));
+  return `<div class="field ch-field"><span class="field-label">GROUPS</span><button class="ch-chip" type="button" data-open-egroup title="Edit Group: group IDs, editor layers, Z layer"><span class="ch-name">${gs === null ? 'MIXED' : gs || 'NONE'}</span></button></div>`;
 }
 // Saw size from a slider: the selected saws change while it moves, and the whole drag is one undo step
 function sawLive(v) {
@@ -3896,47 +3942,57 @@ function drawWheel() {
   const cv = $('cpWheel'), css = cv.clientWidth || 240, dpr = Math.min(window.devicePixelRatio || 1, 2);
   const N = Math.round(css * dpr);
   if (cv.width !== N) { cv.width = N; cv.height = N; }
-  const R = N / 2 - 2 * dpr, rIn = R * 0.8, rDisc = R * 0.7, C = N / 2;
-  if (WHEEL.size !== N) {
-    WHEEL.size = N; WHEEL.hueKey = '';
-    WHEEL.ring = document.createElement('canvas'); WHEEL.ring.width = N; WHEEL.ring.height = N;
-    const rc = WHEEL.ring.getContext('2d');
-    for (let i = 0; i < 360; i++) {          // screen angle phi shows hue 180 - phi (red on the left, like Geometry Dash)
-      const a0 = rad(i - 0.6), a1 = rad(i + 0.6);
-      rc.beginPath(); rc.arc(C, C, R, a0, a1); rc.arc(C, C, rIn, a1, a0, true); rc.closePath();
-      rc.fillStyle = `hsl(${(180 - i + 360) % 360},100%,50%)`; rc.fill();
-    }
-    rc.lineWidth = 3 * dpr; rc.strokeStyle = '#fff';
-    rc.beginPath(); rc.arc(C, C, R, 0, Math.PI * 2); rc.stroke();
-    rc.beginPath(); rc.arc(C, C, rIn, 0, Math.PI * 2); rc.stroke();
-    const D = Math.ceil(rDisc * 2);
-    WHEEL.bary = new Float32Array(D * D * 3); WHEEL.D = D;
-    for (let y = 0; y < D; y++) for (let x = 0; x < D; x++) {
-      const ux = (x + 0.5 - D / 2) / rDisc, uy = -(y + 0.5 - D / 2) / rDisc, k = (y * D + x) * 3;
-      if (ux * ux + uy * uy > 1.02) { WHEEL.bary[k] = -1; continue; }
-      const w = baryOf(ux, uy); WHEEL.bary[k] = w[0]; WHEEL.bary[k + 1] = w[1]; WHEEL.bary[k + 2] = w[2];
-    }
-  }
+  const w = { N, dpr, C: N / 2, R: N / 2 - 2 * dpr };
+  w.rIn = w.R * 0.8; w.rDisc = w.R * 0.7;
+  if (WHEEL.size !== N) makeWheelRing(w);
   const hueKey = String(Math.round(cp.hue));
-  if (WHEEL.hueKey !== hueKey) {
-    WHEEL.hueKey = hueKey;
-    const D = WHEEL.D, img = new ImageData(D, D), hc = hsvToRgb(cp.hue, 1, 1);
-    for (let i = 0; i < D * D; i++) {
-      const k = i * 3, a = WHEEL.bary[k];
-      if (a < 0) continue;
-      const b = WHEEL.bary[k + 1], o = i * 4;
-      img.data[o] = a * hc[0] + b * 255; img.data[o + 1] = a * hc[1] + b * 255; img.data[o + 2] = a * hc[2] + b * 255; img.data[o + 3] = 255;
-    }
-    WHEEL.disc = document.createElement('canvas'); WHEEL.disc.width = D; WHEEL.disc.height = D;
-    WHEEL.disc.getContext('2d').putImageData(img, 0, 0);
-  }
+  if (WHEEL.hueKey !== hueKey) { WHEEL.hueKey = hueKey; makeWheelDisc(); }
   const ctx = cv.getContext('2d');
+  drawWheelPictures(ctx, w);
+  drawWheelKnobs(ctx, w);
+}
+// The hue ring, and which corner colors each pixel of the disc mixes (both only change with the size)
+function makeWheelRing({ N, dpr, C, R, rIn, rDisc }) {
+  WHEEL.size = N; WHEEL.hueKey = '';
+  WHEEL.ring = document.createElement('canvas'); WHEEL.ring.width = N; WHEEL.ring.height = N;
+  const rc = WHEEL.ring.getContext('2d');
+  for (let i = 0; i < 360; i++) {          // screen angle phi shows hue 180 - phi (red on the left, like Geometry Dash)
+    const a0 = rad(i - 0.6), a1 = rad(i + 0.6);
+    rc.beginPath(); rc.arc(C, C, R, a0, a1); rc.arc(C, C, rIn, a1, a0, true); rc.closePath();
+    rc.fillStyle = `hsl(${(180 - i + 360) % 360},100%,50%)`; rc.fill();
+  }
+  rc.lineWidth = 3 * dpr; rc.strokeStyle = '#fff';
+  rc.beginPath(); rc.arc(C, C, R, 0, Math.PI * 2); rc.stroke();
+  rc.beginPath(); rc.arc(C, C, rIn, 0, Math.PI * 2); rc.stroke();
+  const D = Math.ceil(rDisc * 2);
+  WHEEL.bary = new Float32Array(D * D * 3); WHEEL.D = D;
+  for (let y = 0; y < D; y++) for (let x = 0; x < D; x++) {
+    const ux = (x + 0.5 - D / 2) / rDisc, uy = -(y + 0.5 - D / 2) / rDisc, k = (y * D + x) * 3;
+    if (ux * ux + uy * uy > 1.02) { WHEEL.bary[k] = -1; continue; }
+    const w = baryOf(ux, uy); WHEEL.bary[k] = w[0]; WHEEL.bary[k + 1] = w[1]; WHEEL.bary[k + 2] = w[2];
+  }
+}
+// the saturation/brightness disc for the current hue
+function makeWheelDisc() {
+  const D = WHEEL.D, img = new ImageData(D, D), hc = hsvToRgb(cp.hue, 1, 1);
+  for (let i = 0; i < D * D; i++) {
+    const k = i * 3, a = WHEEL.bary[k];
+    if (a < 0) continue;
+    const b = WHEEL.bary[k + 1], o = i * 4;
+    img.data[o] = a * hc[0] + b * 255; img.data[o + 1] = a * hc[1] + b * 255; img.data[o + 2] = a * hc[2] + b * 255; img.data[o + 3] = 255;
+  }
+  WHEEL.disc = document.createElement('canvas'); WHEEL.disc.width = D; WHEEL.disc.height = D;
+  WHEEL.disc.getContext('2d').putImageData(img, 0, 0);
+}
+function drawWheelPictures(ctx, { N, dpr, C, rDisc }) {
   ctx.clearRect(0, 0, N, N);
   ctx.drawImage(WHEEL.ring, 0, 0);
   ctx.save(); ctx.beginPath(); ctx.arc(C, C, rDisc, 0, Math.PI * 2); ctx.clip();
   ctx.drawImage(WHEEL.disc, C - WHEEL.D / 2, C - WHEEL.D / 2); ctx.restore();
   ctx.lineWidth = 3 * dpr; ctx.strokeStyle = '#fff'; ctx.beginPath(); ctx.arc(C, C, rDisc, 0, Math.PI * 2); ctx.stroke();
-  // the two knobs
+}
+// one knob on the ring for the hue, one in the disc for saturation and brightness
+function drawWheelKnobs(ctx, { dpr, C, R, rIn, rDisc }) {
   const knob = (x, y, r) => { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.lineWidth = 2.5 * dpr; ctx.strokeStyle = '#000'; ctx.stroke(); ctx.lineWidth = 1.5 * dpr; ctx.strokeStyle = '#fff'; ctx.stroke(); };
   const phi = rad(180 - cp.hue), rm = (R + rIn) / 2;
   knob(C + Math.cos(phi) * rm, C + Math.sin(phi) * rm, (R - rIn) * 0.42);
@@ -5042,26 +5098,27 @@ function levelMeta(L) {
 function renderPath() {
   const box = $('pathList'), list = pathLevels();
   if (!list.length) { box.innerHTML = '<p class="gd-empty">There are no levels yet.</p>'; return; }
-  box.innerHTML = list.map((L, i) => {
-    const open = levelUnlocked(L), won = levelBeaten(L), best = won ? 100 : progress.best[L.id] || 0;
-    const check = won ? '<svg class="path-check" aria-label="beaten"><use href="#i-check"/></svg>' : '';
-    const prac = progress.practice[L.id] || 0;
-    const info = open
-      ? `<div class="path-bar"><div class="progress"><div class="progress-fill" style="width:${best}%"></div></div><span class="o">${best}%</span></div>
-         <div class="path-bar practice"><div class="progress"><div class="progress-fill" style="width:${prac}%"></div></div><span class="o">${prac}%</span></div>`
-      : `<span class="gd-row-meta">BEAT ${esc(list[i - 1].name)} TO UNLOCK</span>`;
-    return `<div class="gd-row path-row${open ? '' : ' locked'}${won ? ' beaten' : ''}">
-      <span class="path-num" aria-hidden="true">${i + 1}</span>
-      <div class="gd-row-main"><span class="gd-row-name">${esc(L.name)}${check}</span>${info}</div>
-      ${L.reward ? `<div class="path-reward" title="Beat it to unlock ${rewardText(L.reward).toLowerCase()}">${['ship', 'cube'].filter(f => L.reward[f]).map(f =>
-        `<canvas data-rform="${f}" data-rid="${L.reward[f]}" data-won="${won ? 1 : ''}" aria-label="Reward: ${f} ${L.reward[f]}"></canvas>`).join('')}</div>` : ''}
-      <div class="gd-row-actions">${open
-        ? `<button class="gd-btn" data-play="${esc(L.id)}" aria-label="Play ${esc(L.name)}">PLAY</button>
-           <button class="gd-btn blue small" data-practice="${esc(L.id)}" aria-label="Practice ${esc(L.name)}">PRACTICE</button>`
-        : '<svg class="path-lock" role="img" aria-label="Locked"><use href="#i-lock"/></svg>'}</div>
-    </div>`;
-  }).join('');
+  box.innerHTML = list.map(pathRowHTML).join('');
   drawPathRewards(); setTimeout(drawPathRewards, 600);   // again once the icon pictures have loaded
+}
+function pathRowHTML(L, i, list) {
+  const open = levelUnlocked(L), won = levelBeaten(L), best = won ? 100 : progress.best[L.id] || 0;
+  const check = won ? '<svg class="path-check" aria-label="beaten"><use href="#i-check"/></svg>' : '';
+  const prac = progress.practice[L.id] || 0;
+  const info = open
+    ? `<div class="path-bar"><div class="progress"><div class="progress-fill" style="width:${best}%"></div></div><span class="o">${best}%</span></div>
+       <div class="path-bar practice"><div class="progress"><div class="progress-fill" style="width:${prac}%"></div></div><span class="o">${prac}%</span></div>`
+    : `<span class="gd-row-meta">BEAT ${esc(list[i - 1].name)} TO UNLOCK</span>`;
+  return `<div class="gd-row path-row${open ? '' : ' locked'}${won ? ' beaten' : ''}">
+    <span class="path-num" aria-hidden="true">${i + 1}</span>
+    <div class="gd-row-main"><span class="gd-row-name">${esc(L.name)}${check}</span>${info}</div>
+    ${L.reward ? `<div class="path-reward" title="Beat it to unlock ${rewardText(L.reward).toLowerCase()}">${['ship', 'cube'].filter(f => L.reward[f]).map(f =>
+      `<canvas data-rform="${f}" data-rid="${L.reward[f]}" data-won="${won ? 1 : ''}" aria-label="Reward: ${f} ${L.reward[f]}"></canvas>`).join('')}</div>` : ''}
+    <div class="gd-row-actions">${open
+      ? `<button class="gd-btn" data-play="${esc(L.id)}" aria-label="Play ${esc(L.name)}">PLAY</button>
+         <button class="gd-btn blue small" data-practice="${esc(L.id)}" aria-label="Practice ${esc(L.name)}">PRACTICE</button>`
+      : '<svg class="path-lock" role="img" aria-label="Locked"><use href="#i-lock"/></svg>'}</div>
+  </div>`;
 }
 // Each level's reward icons: gray until earned, then in your colors
 function drawPathRewards() {
@@ -5270,26 +5327,32 @@ function drawKitTileArt(btn) {
 }
 function renderKitGrid() {
   const grid = $('kitGrid'), form = kitUI.tab, n = kitCount(form), key = form + n + settings.quality;
-  if (kitUI.built !== key) {
-    kitUI.built = key;
-    if (kitUI.observer) kitUI.observer.disconnect();
-    kitUI.seen.clear();
-    const kind = form === 'cube' ? 'Cube' : 'Ship';
-    let html = '';
-    for (let id = 1; id <= n; id++) {
-      html += `<button type="button" class="kit-icon" data-icon="${id}" title="${kind} ${id}" aria-label="${kind} ${id}"><canvas></canvas></button>`;
+  if (kitUI.built !== key) { kitUI.built = key; buildKitGrid(grid, form, n); }
+  else for (const b of kitUI.seen) drawKitTileArt(b);
+  markKitIcons(grid, form);
+}
+// one button per icon
+function buildKitGrid(grid, form, n) {
+  if (kitUI.observer) kitUI.observer.disconnect();
+  kitUI.seen.clear();
+  const kind = form === 'cube' ? 'Cube' : 'Ship';
+  let html = '';
+  for (let id = 1; id <= n; id++) {
+    html += `<button type="button" class="kit-icon" data-icon="${id}" title="${kind} ${id}" aria-label="${kind} ${id}"><canvas></canvas></button>`;
+  }
+  grid.innerHTML = html;
+  grid.scrollTop = 0;
+  // pictures are only loaded for the icons you scroll to
+  kitUI.observer = new IntersectionObserver(list => {
+    for (const en of list) {
+      if (en.isIntersecting) { kitUI.seen.add(en.target); drawKitTileArt(en.target); }
+      else kitUI.seen.delete(en.target);
     }
-    grid.innerHTML = html;
-    grid.scrollTop = 0;
-    // pictures are only loaded for the icons you scroll to
-    kitUI.observer = new IntersectionObserver(list => {
-      for (const en of list) {
-        if (en.isIntersecting) { kitUI.seen.add(en.target); drawKitTileArt(en.target); }
-        else kitUI.seen.delete(en.target);
-      }
-    }, { root: grid, rootMargin: '120px' });
-    grid.querySelectorAll('.kit-icon').forEach(b => kitUI.observer.observe(b));
-  } else for (const b of kitUI.seen) drawKitTileArt(b);
+  }, { root: grid, rootMargin: '120px' });
+  grid.querySelectorAll('.kit-icon').forEach(b => kitUI.observer.observe(b));
+}
+// the chosen icon, and the locked ones
+function markKitIcons(grid, form) {
   grid.querySelectorAll('.kit-icon').forEach(b => {
     const id = Number(b.dataset.icon), lock = iconLock(form, id), kind = form === 'cube' ? 'Cube' : 'Ship';
     b.setAttribute('aria-pressed', id === kit[form]);
@@ -5617,30 +5680,36 @@ $('edScroll').addEventListener('change', e => e.target.blur());
 // input for flying (your onKeyPress / onKeyRelease / onMousePress / onMouseRelease)
 window.addEventListener('keydown', e => {
   if (e.key === 'Tab' && settings.editorMode && !e.ctrlKey && !e.altKey && !e.metaKey) { e.preventDefault(); if (!e.repeat) showHackMenu(); return; }
-  if (isTyping(e) && e.target.closest('#hackMenu')) { if (e.key === 'Escape' || e.key === 'Enter') e.target.blur(); return; }
-  if (e.key === 'Escape' && hackMenuOpen()) { showHackMenu(false); return; }
-  if (!$('colorPop').hidden) { if (e.key === 'Escape') { if (!$('cpMenu').hidden) cpMenu(false); else closeColorPop(); } return; }
-  if (!$('modal').hidden) { if (e.key === 'Escape') hideModal(); return; }
-  if (!$('egPop').hidden) { if (e.key === 'Escape') closeEditGroup(); return; }
-  if (!$('eoPop').hidden) { if (e.key === 'Escape') eoBack(); return; }
-  if (screen === 'play') {
-    if (e.code === 'Space' || e.code === 'ArrowUp') {
-      e.preventDefault();
-      if (!e.repeat && !game.paused && !game.finished) { queueInput(true, e); noteClick(); }
-    } else if (e.code === 'Escape') {
-      if (game.mode === 'test' || game.finished) leavePlay();
-      else if (game.paused) resumeGame();
-      else pauseGame();
-    }
-    else if (e.code === 'KeyZ' && !e.repeat) placeCheckpoint();
-    else if (e.code === 'KeyX' && !e.repeat) removeCheckpoint();
-    else if (e.code === 'KeyI' && settings.editorMode) setHack('noclip', !hk('noclip'));
-    else if (e.code === 'KeyH' && settings.editorMode) setHack('hitboxes', !hk('hitboxes'));
-    return;
-  }
-  if (screen === 'editor') { edKey(e); return; }
-  if (e.key === 'Escape' && screen !== 'menu') showScreen('menu');
+  if (popupKey(e)) return;
+  if (screen === 'play') playKey(e);
+  else if (screen === 'editor') edKey(e);
+  else if (e.key === 'Escape' && screen !== 'menu') showScreen('menu');
 });
+// An open dev menu, window or popup takes the keyboard first (Escape closes it). True if it did.
+function popupKey(e) {
+  const escape = e.key === 'Escape';
+  if (isTyping(e) && e.target.closest('#hackMenu')) { if (escape || e.key === 'Enter') e.target.blur(); return true; }
+  if (escape && hackMenuOpen()) { showHackMenu(false); return true; }
+  if (!$('colorPop').hidden) { if (escape) { if (!$('cpMenu').hidden) cpMenu(false); else closeColorPop(); } return true; }
+  if (!$('modal').hidden) { if (escape) hideModal(); return true; }
+  if (!$('egPop').hidden) { if (escape) closeEditGroup(); return true; }
+  if (!$('eoPop').hidden) { if (escape) eoBack(); return true; }
+  return false;
+}
+function playKey(e) {
+  if (e.code === 'Space' || e.code === 'ArrowUp') {
+    e.preventDefault();
+    if (!e.repeat && !game.paused && !game.finished) { queueInput(true, e); noteClick(); }
+  } else if (e.code === 'Escape') {
+    if (game.mode === 'test' || game.finished) leavePlay();
+    else if (game.paused) resumeGame();
+    else pauseGame();
+  }
+  else if (e.code === 'KeyZ' && !e.repeat) placeCheckpoint();
+  else if (e.code === 'KeyX' && !e.repeat) removeCheckpoint();
+  else if (e.code === 'KeyI' && settings.editorMode) setHack('noclip', !hk('noclip'));
+  else if (e.code === 'KeyH' && settings.editorMode) setHack('hitboxes', !hk('hitboxes'));
+}
 window.addEventListener('keyup', e => {
   if (e.code === 'Space' || e.code === 'ArrowUp') queueInput(false, e);
   if (e.key === ' ') { ed.spaceDown = false; delete edCanvas.dataset.pan; }
@@ -5670,30 +5739,35 @@ function frame(now) {
   lastFrame = now;
   countFrame(now);
   if (screen === 'play') {
-    const speed = hackSpeed();
-    const t = elapsed * speed;     // Speedhack: the game's clock runs faster or slower
-    if (!game.finished && !game.paused) {
-      if (game.dead) {
-        applyInputUntil(); inputStepDone();   // holding through the respawn still works
-        game.deathTimer -= t;
-        if (game.deathTimer <= 0) respawn();
-      } else {
-        game.acc += t;
-        while (game.acc >= dt) {
-          // This step ends at (acc - dt) game seconds before now. The last step of
-          // the frame takes every press so far, so a fast screen feels the same as before.
-          if (game.acc - dt < dt) applyInputUntil();
-          else applyInputUntil(now - (game.acc - dt) / speed * 1000);
-          step();
-          inputStepDone();
-          game.acc -= dt;
-          if (game.dead || game.finished) { game.acc = 0; break; }
-        }
-      }
-    }
+    if (!game.finished && !game.paused) runGameClock(elapsed, now);
     if (screen === 'play') { drawGame(); updateStatus(now); }
   } else if (screen === 'editor' && ed.needsDraw) { ed.needsDraw = false; drawEditor(); }
   requestAnimationFrame(frame);
+}
+// Speedhack: the game's clock runs faster or slower
+function runGameClock(elapsed, now) {
+  const speed = hackSpeed(), t = elapsed * speed;
+  if (game.dead) waitToRespawn(t);
+  else runSteps(t, speed, now);
+}
+function waitToRespawn(t) {
+  applyInputUntil(); inputStepDone();   // holding through the respawn still works
+  game.deathTimer -= t;
+  if (game.deathTimer <= 0) respawn();
+}
+// As many physics steps as the time that passed holds. Each step takes the presses that
+// happened by its own time: it ends (acc - dt) game seconds before now. The last step of
+// the frame takes every press so far, so a fast screen feels the same as before.
+function runSteps(t, speed, now) {
+  game.acc += t;
+  while (game.acc >= dt) {
+    if (game.acc - dt < dt) applyInputUntil();
+    else applyInputUntil(now - (game.acc - dt) / speed * 1000);
+    step();
+    inputStepDone();
+    game.acc -= dt;
+    if (game.dead || game.finished) { game.acc = 0; break; }
+  }
 }
 
 if (!document.title.startsWith(GAME_TITLE)) document.title = GAME_TITLE;   // keeps the longer title in index.html
