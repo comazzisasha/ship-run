@@ -409,143 +409,201 @@ const DECO_ANCHOR = (window.GD_SPRITES && window.GD_SPRITES.anchor) || {};
 // Default channels: [main, detail]. Thorn pits and saws are black, like Geometry Dash.
 function decoChannels(spr) { return spr.startsWith('pit_') ? [CH.BLACK, 1] : [CH.OBJ, 1]; }
 
+// One object of a level, ready to play and draw: where it is, its hitbox, its look and its colors
 function makeObject(def, colOffset = 0, idx = 0) {
-  const g = gridSize;
   const a = argsOf(def), op = optsOf(def) || {};
-  const t = a[0], X = a[1] + colOffset, Y = a[2];
-  const o = { t, X, Y, idx, def, kind: 'none', layer: 0, ch: 0, dch: 0 };
-  o.x = (X - 1) * g;                 // GameObject.__init__
-  o.y = 300 - (Y - 1) * g;
-  let ch0 = 0, dch0 = 0;             // default colors (0 = this object is never colored)
-
-  if (HAZARDS[t] || FADE_OF[t]) {    // Spike, ShortSpike, SmallSpike, TinySpike (and their fading versions)
-    const H = HAZARDS[t] || HAZARDS[FADE_OF[t]];
-    o.kind = 'hazard'; o.layer = 3; o.fade = !!FADE_OF[t]; o.shape = FADE_OF[t] || t;
-    o.angleDeg = Number(a[3]) || 0; o.angle = rad(o.angleDeg);
-    const c = [o.x + 0.5 * g, o.y - 0.5 * g];
-    const corners = pts => pts.map(([u, v]) => rotatePoint([o.x + u * g, o.y - v * g], c, o.angle));
-    o.pts = corners(H.P);
-    o.hit = { poly: corners(H.H) };
-    const xs = o.pts.map(p => p[0]);
-    o.cx = (Math.min(...xs) + Math.max(...xs)) / 2;      // Shape.centerX
-    const look = !o.fade && SPIKE_LOOKS[a[4]];
-    if (look && look[0] === t) o.design = a[4];
-    ch0 = CH.OBJ;
-    if (o.design && look[1]) dch0 = CH.BLACK;
-  } else if (t === 'ThornPit') {
-    o.kind = 'hazard'; o.layer = 3;
-    o.angleDeg = Number(a[3]) || 0; o.angle = rad(o.angleDeg);
-    if (PIT_LOOKS[a[4]] != null) o.design = a[4];
-    const cx = o.x + 0.5 * g, cy = o.y - 0.5 * g, c = [cx, cy];
-    [o.imgX, o.imgY] = rotatePoint([cx, o.y - (o.design ? PIT_LOOKS[o.design] : 0) * g], c, o.angle);
-    const [hitX, hitY] = rotatePoint([cx, o.y + 0.065 * g], c, o.angle);
-    o.rotDeg = -deg(o.angle);
-    o.hit = { poly: rotatedRect(hitX, hitY, 0.33 * g, 0.43 * g, o.rotDeg) };
-    o.cx = rotatePoint([cx, o.y], c, o.angle)[0];
-    ch0 = CH.BLACK;
-  } else if (t === 'Saw') {
-    o.kind = 'hazard'; o.layer = 2;
-    o.size = a[3] == null ? 1 : Math.min(SAW_MAX, Math.max(SAW_MIN, Number(a[3]) || 1));
-    if (SAW_LOOKS[a[4]] && a[4] !== 'sawblade_01') o.design = a[4];
-    const L = sawLook(o);
-    o.cx = o.x + 0.5 * g; o.cy = o.y - 0.5 * g;
-    o.spin = Math.random() * 360;
-    o.hit = { circle: { cx: o.cx, cy: o.cy, r: g * o.size * L.r } };
-    ch0 = L.ch; if (L.det != null) dch0 = L.dch || 1;
-  } else if (t === 'Block' || t === 'OutlineBlock' || t === 'InvisibleBlock') {
-    // Block and the invisible block fill their square. Outline pieces are solid
-    // only where their white lines are (the edge line sits at the top).
-    o.kind = 'solid'; o.layer = 1;
-    o.box = { l: o.x, r: o.x + g, t: o.y - g, b: o.y };
-    o.hit = { poly: boxPoly(o.x, o.y - g, o.x + g, o.y) };
-    o.cx = o.x + g / 2;
-    if (t === 'InvisibleBlock') o.fade = true;
-    if (t === 'OutlineBlock') {
-      o.angleDeg = Number(a[3]) || 0; o.angle = rad(o.angleDeg);
-      o.piece = Math.min(OUTLINE_MAX, Math.max(1, Math.round(Number(a[4]) || 1))); o.flip = !!a[5];
-      const P = OUTLINE_PIECES[o.piece], turn = rad(Math.round(o.angleDeg / 90) * 90), c = [o.x + g / 2, o.y - g / 2];
-      o.fade = !!P[3];
-      o.parts = P[2].map(([u0, v0, u1, v1]) => {
-        if (o.flip) [u0, u1] = [1 - u1, 1 - u0];
-        const pts = [[u0, v0], [u1, v1]].map(([u, v]) => turn ? rotatePoint([o.x + u * g, o.y - v * g], c, turn) : [o.x + u * g, o.y - v * g]);
-        const line = { l: Math.min(pts[0][0], pts[1][0]), r: Math.max(pts[0][0], pts[1][0]), t: Math.min(pts[0][1], pts[1][1]), b: Math.max(pts[0][1], pts[1][1]) };
-        const box = { ...line }, short = LINE_T * g - (box.r - box.l);
-        if (short > 0) { box.l -= short / 2; box.r += short / 2; }
-        return { box, line, poly: boxPoly(box.l, box.t, box.r, box.b) };     // line = the drawn line, box = its hitbox
-      });
-      o.box = o.parts[0].box; o.hit = { poly: o.parts[0].poly };
-    }
-    ch0 = CH.OBJ;
-  } else if (PORTALS[t]) {           // SpeedPortal, GravityPortal, SizePortal
-    const P = PORTALS[t];
-    o.kind = 'portal'; o.layer = 4; o.statusType = P.statusType;
-    o.status = t === 'GravityPortal' ? Number(a[3]) : a[3];
-    const v = P.variants[String(o.status)] || Object.values(P.variants)[0];
-    o.w = g * v[0]; o.h = g * v[1];
-    o.cx = o.x + 0.5 * g; o.cy = o.y - 0.5 * g;
-    o.hit = { poly: boxPoly(o.cx - o.w / 2, o.cy - o.h / 2, o.cx + o.w / 2, o.cy + o.h / 2) };
-  } else if (t === 'TelePortal') {
-    o.kind = 'portal'; o.layer = 4; o.statusType = 'teleport';
-    o.Y2 = a[3] == null ? Y : Number(a[3]);
-    o.y1 = 300 - (Y - 1) * g;
-    o.y2 = 300 - (o.Y2 - 1) * g;
-    o.w = g * TELE_W; o.h = g * TELE_H;
-    o.cx = o.x + 0.5 * g; o.cy1 = o.y1 - 0.5 * g; o.cy2 = o.y2 - 0.5 * g;
-    o.hit = { poly: boxPoly(o.cx - o.w / 2, o.cy1 - o.h / 2, o.cx + o.w / 2, o.cy1 + o.h / 2) };
-    o.exitPoly = boxPoly(o.cx - o.w / 2, o.cy2 - o.h / 2, o.cx + o.w / 2, o.cy2 + o.h / 2);
-    o.used = false;
-  } else if (t === 'Pad') {
-    o.kind = 'transporter'; o.layer = 2;
-    const h = PAD_H * g;
-    o.hit = { poly: boxPoly(o.x, o.y - h, o.x + g, o.y) };
-    o.cx = o.x + g / 2;
-  } else if (t === 'Orb') {
-    o.kind = 'transporter'; o.layer = 2;
-    // The orb's hitbox is its own square (CMU had it one square lower, under the picture).
-    o.hit = { poly: boxPoly(o.x, o.y - g, o.x + g, o.y) };
-    o.cx = o.x + g / 2;
-    o.used = false;
-  } else if (t === 'Coin') {          // a user coin: touch it, then reach the end of its level
-    o.kind = 'coin'; o.layer = 5;
-    o.cx = o.x + g / 2; o.cy = o.y - g / 2;
-    o.hit = { circle: { cx: o.cx, cy: o.cy, r: 0.55 * g } };
-    o.key = a[1] + ',' + a[2];
-  } else if (isTrigger(t)) {          // color and alpha triggers: only seen in the editor
-    o.kind = 'trigger'; o.layer = 9;
-    o.cx = o.x + g / 2; o.cy = o.y - g / 2; o.tx = o.cx;
-    o.hit = { poly: boxPoly(o.x, o.y - g, o.x + g, o.y) };
-    o.touch = !!op.touch; o.spawn = !!op.spawn;
-    o.fadeTime = typeof op.fade === 'number' ? Math.max(0, op.fade) : 0.5;
-    if (t === 'ColorTrigger') { o.target = op.channel == null ? 1 : chId(op.channel); o.spec = parseSpec(op, 0); }
-    else { o.group = Math.max(0, Math.round(Number(op.group) || 0)); o.opacity = typeof op.opacity === 'number' ? clamp01(op.opacity) : 1; }
-  } else if (t === 'Deco' || t === 'Slope') {   // decoration: no hitbox, drawn behind everything
-    o.layer = -1;
-    o.angleDeg = Number(a[3]) || 0; o.angle = rad(o.angleDeg);
-    o.spr = String(a[4] || ''); o.flip = !!a[5];
-    o.fade = o.spr.startsWith('invis');
-    const sz = sprSize(o.spr) || [1, 1];
-    o.sw = sz[0] * g; o.sh = sz[1] * g;
-    // where the picture's middle is: deco from the anchor list, slopes snap to the grid
-    let [u, v] = DECO_ANCHOR[o.spr] || [0.5, 0.5];
-    if (t === 'Slope') {
-      if (Math.round(sz[0]) % 2 === 0) u += 0.5;
-      if (Math.round(sz[1]) % 2 === 0) v += 0.5;
-    } else if (o.flip) u = 1 - u;
-    const c = [o.x + 0.5 * g, o.y - 0.5 * g];
-    [o.px, o.py] = rotatePoint([o.x + u * g, o.y - v * g], c, o.angle);
-    o.cx = o.x + g / 2;
-    [ch0, dch0] = decoChannels(o.spr);
-  } else {                           // GridBlock (decoration, never colored) and anything unknown
-    o.cx = o.x + g / 2;
-  }
-  if (ch0) {
-    o.ch0 = ch0; o.dch0 = dch0;
-    o.ch = chId(op.color) || ch0;
-    if (dch0) o.dch = chId(op.detail) || dch0;
-  }
+  const o = placeObject(def, a, colOffset, idx);
+  const [ch0, dch0] = buildObject(o, a, op);
+  setObjectColors(o, op, ch0, dch0);
   o.groups = Array.isArray(op.groups) ? op.groups.map(n => Math.round(Number(n))).filter(n => n >= 1 && n <= 9999) : [];
   editGroupFields(o, op);
   return o;
+}
+// Where the object's square is (GameObject.__init__)
+function placeObject(def, a, colOffset, idx) {
+  const t = a[0], X = a[1] + colOffset, Y = a[2];
+  const o = { t, X, Y, idx, def, kind: 'none', layer: 0, ch: 0, dch: 0 };
+  o.x = (X - 1) * gridSize;
+  o.y = 300 - (Y - 1) * gridSize;
+  return o;
+}
+// The type's own setup. Returns its default colors [main, detail] (0 = this object is never colored).
+function buildObject(o, a, op) {
+  const t = o.t;
+  if (HAZARDS[t] || FADE_OF[t]) return buildSpike(o, a);
+  if (t === 'ThornPit') return buildThornPit(o, a);
+  if (t === 'Saw') return buildSaw(o, a);
+  if (t === 'Block' || t === 'OutlineBlock' || t === 'InvisibleBlock') return buildBlock(o, a);
+  if (PORTALS[t]) return buildPortal(o, a);
+  if (t === 'TelePortal') return buildTeleporter(o, a);
+  if (t === 'Pad') return buildPad(o);
+  if (t === 'Orb') return buildOrb(o);
+  if (t === 'Coin') return buildCoin(o, a);
+  if (isTrigger(t)) return buildTrigger(o, op);
+  if (t === 'Deco' || t === 'Slope') return buildDeco(o, a);
+  o.cx = o.x + gridSize / 2;           // GridBlock (decoration, never colored) and anything unknown
+  return [0, 0];
+}
+function setAngle(o, a) { o.angleDeg = Number(a[3]) || 0; o.angle = rad(o.angleDeg); }
+const cellCenter = o => [o.x + 0.5 * gridSize, o.y - 0.5 * gridSize];
+
+// Spike, ShortSpike, SmallSpike, TinySpike (and their fading versions)
+function buildSpike(o, a) {
+  const g = gridSize, t = o.t, H = HAZARDS[t] || HAZARDS[FADE_OF[t]];
+  o.kind = 'hazard'; o.layer = 3; o.fade = !!FADE_OF[t]; o.shape = FADE_OF[t] || t;
+  setAngle(o, a);
+  const c = cellCenter(o);
+  const corners = pts => pts.map(([u, v]) => rotatePoint([o.x + u * g, o.y - v * g], c, o.angle));
+  o.pts = corners(H.P);
+  o.hit = { poly: corners(H.H) };
+  const xs = o.pts.map(p => p[0]);
+  o.cx = (Math.min(...xs) + Math.max(...xs)) / 2;      // Shape.centerX
+  const look = !o.fade && SPIKE_LOOKS[a[4]];
+  if (look && look[0] === t) o.design = a[4];
+  return [CH.OBJ, o.design && look[1] ? CH.BLACK : 0];
+}
+function buildThornPit(o, a) {
+  const g = gridSize;
+  o.kind = 'hazard'; o.layer = 3;
+  setAngle(o, a);
+  if (PIT_LOOKS[a[4]] != null) o.design = a[4];
+  const c = cellCenter(o), [cx] = c;
+  [o.imgX, o.imgY] = rotatePoint([cx, o.y - (o.design ? PIT_LOOKS[o.design] : 0) * g], c, o.angle);
+  const [hitX, hitY] = rotatePoint([cx, o.y + 0.065 * g], c, o.angle);
+  o.rotDeg = -deg(o.angle);
+  o.hit = { poly: rotatedRect(hitX, hitY, 0.33 * g, 0.43 * g, o.rotDeg) };
+  o.cx = rotatePoint([cx, o.y], c, o.angle)[0];
+  return [CH.BLACK, 0];
+}
+function buildSaw(o, a) {
+  o.kind = 'hazard'; o.layer = 2;
+  o.size = a[3] == null ? 1 : Math.min(SAW_MAX, Math.max(SAW_MIN, Number(a[3]) || 1));
+  if (SAW_LOOKS[a[4]] && a[4] !== 'sawblade_01') o.design = a[4];
+  const L = sawLook(o);
+  [o.cx, o.cy] = cellCenter(o);
+  o.spin = Math.random() * 360;
+  o.hit = { circle: { cx: o.cx, cy: o.cy, r: gridSize * o.size * L.r } };
+  return [L.ch, L.det != null ? L.dch || 1 : 0];
+}
+// Block and the invisible block fill their square. Outline pieces are solid
+// only where their white lines are (the edge line sits at the top).
+function buildBlock(o, a) {
+  const g = gridSize;
+  o.kind = 'solid'; o.layer = 1;
+  o.box = { l: o.x, r: o.x + g, t: o.y - g, b: o.y };
+  o.hit = { poly: boxPoly(o.x, o.y - g, o.x + g, o.y) };
+  o.cx = o.x + g / 2;
+  if (o.t === 'InvisibleBlock') o.fade = true;
+  if (o.t === 'OutlineBlock') buildOutlinePiece(o, a);
+  return [CH.OBJ, 0];
+}
+function buildOutlinePiece(o, a) {
+  setAngle(o, a);
+  o.piece = Math.min(OUTLINE_MAX, Math.max(1, Math.round(Number(a[4]) || 1))); o.flip = !!a[5];
+  const P = OUTLINE_PIECES[o.piece];
+  o.fade = !!P[3];
+  o.parts = P[2].map(part => outlineLine(o, part));
+  o.box = o.parts[0].box; o.hit = { poly: o.parts[0].poly };
+}
+// One white line of an outline piece: line = the drawn line, box = its hitbox (widened when thin)
+function outlineLine(o, [u0, v0, u1, v1]) {
+  const g = gridSize, turn = rad(Math.round(o.angleDeg / 90) * 90), c = cellCenter(o);
+  if (o.flip) [u0, u1] = [1 - u1, 1 - u0];
+  const pts = [[u0, v0], [u1, v1]].map(([u, v]) => turn ? rotatePoint([o.x + u * g, o.y - v * g], c, turn) : [o.x + u * g, o.y - v * g]);
+  const line = { l: Math.min(pts[0][0], pts[1][0]), r: Math.max(pts[0][0], pts[1][0]), t: Math.min(pts[0][1], pts[1][1]), b: Math.max(pts[0][1], pts[1][1]) };
+  const box = { ...line }, short = LINE_T * g - (box.r - box.l);
+  if (short > 0) { box.l -= short / 2; box.r += short / 2; }
+  return { box, line, poly: boxPoly(box.l, box.t, box.r, box.b) };
+}
+// SpeedPortal, GravityPortal, SizePortal
+function buildPortal(o, a) {
+  const P = PORTALS[o.t];
+  o.kind = 'portal'; o.layer = 4; o.statusType = P.statusType;
+  o.status = o.t === 'GravityPortal' ? Number(a[3]) : a[3];
+  const v = P.variants[String(o.status)] || Object.values(P.variants)[0];
+  o.w = gridSize * v[0]; o.h = gridSize * v[1];
+  [o.cx, o.cy] = cellCenter(o);
+  o.hit = { poly: boxPoly(o.cx - o.w / 2, o.cy - o.h / 2, o.cx + o.w / 2, o.cy + o.h / 2) };
+  return [0, 0];
+}
+function buildTeleporter(o, a) {
+  const g = gridSize;
+  o.kind = 'portal'; o.layer = 4; o.statusType = 'teleport';
+  o.Y2 = a[3] == null ? o.Y : Number(a[3]);
+  o.y1 = 300 - (o.Y - 1) * g;
+  o.y2 = 300 - (o.Y2 - 1) * g;
+  o.w = g * TELE_W; o.h = g * TELE_H;
+  o.cx = o.x + 0.5 * g; o.cy1 = o.y1 - 0.5 * g; o.cy2 = o.y2 - 0.5 * g;
+  o.hit = { poly: boxPoly(o.cx - o.w / 2, o.cy1 - o.h / 2, o.cx + o.w / 2, o.cy1 + o.h / 2) };
+  o.exitPoly = boxPoly(o.cx - o.w / 2, o.cy2 - o.h / 2, o.cx + o.w / 2, o.cy2 + o.h / 2);
+  o.used = false;
+  return [0, 0];
+}
+function buildPad(o) {
+  const g = gridSize;
+  o.kind = 'transporter'; o.layer = 2;
+  o.hit = { poly: boxPoly(o.x, o.y - PAD_H * g, o.x + g, o.y) };
+  o.cx = o.x + g / 2;
+  return [0, 0];
+}
+// The orb's hitbox is its own square (CMU had it one square lower, under the picture).
+function buildOrb(o) {
+  const g = gridSize;
+  o.kind = 'transporter'; o.layer = 2;
+  o.hit = { poly: boxPoly(o.x, o.y - g, o.x + g, o.y) };
+  o.cx = o.x + g / 2;
+  o.used = false;
+  return [0, 0];
+}
+// A user coin: touch it, then reach the end of its level
+function buildCoin(o, a) {
+  o.kind = 'coin'; o.layer = 5;
+  [o.cx, o.cy] = cellCenter(o);
+  o.hit = { circle: { cx: o.cx, cy: o.cy, r: 0.55 * gridSize } };
+  o.key = a[1] + ',' + a[2];
+  return [0, 0];
+}
+// Color and alpha triggers: only seen in the editor
+function buildTrigger(o, op) {
+  const g = gridSize;
+  o.kind = 'trigger'; o.layer = 9;
+  o.cx = o.x + g / 2; o.cy = o.y - g / 2; o.tx = o.cx;
+  o.hit = { poly: boxPoly(o.x, o.y - g, o.x + g, o.y) };
+  o.touch = !!op.touch; o.spawn = !!op.spawn;
+  o.fadeTime = typeof op.fade === 'number' ? Math.max(0, op.fade) : 0.5;
+  if (o.t === 'ColorTrigger') { o.target = op.channel == null ? 1 : chId(op.channel); o.spec = parseSpec(op, 0); }
+  else { o.group = Math.max(0, Math.round(Number(op.group) || 0)); o.opacity = typeof op.opacity === 'number' ? clamp01(op.opacity) : 1; }
+  return [0, 0];
+}
+// Decoration: no hitbox, drawn behind everything
+function buildDeco(o, a) {
+  const g = gridSize;
+  o.layer = -1;
+  setAngle(o, a);
+  o.spr = String(a[4] || ''); o.flip = !!a[5];
+  o.fade = o.spr.startsWith('invis');
+  const sz = sprSize(o.spr) || [1, 1];
+  o.sw = sz[0] * g; o.sh = sz[1] * g;
+  const [u, v] = decoAnchor(o, sz);
+  [o.px, o.py] = rotatePoint([o.x + u * g, o.y - v * g], cellCenter(o), o.angle);
+  o.cx = o.x + g / 2;
+  return decoChannels(o.spr);
+}
+// Where the picture's middle is in its square: deco from the anchor list, slopes snap to the grid
+function decoAnchor(o, sz) {
+  let [u, v] = DECO_ANCHOR[o.spr] || [0.5, 0.5];
+  if (o.t === 'Slope') {
+    if (Math.round(sz[0]) % 2 === 0) u += 0.5;
+    if (Math.round(sz[1]) % 2 === 0) v += 0.5;
+  } else if (o.flip) u = 1 - u;
+  return [u, v];
+}
+// Its colors: the ones its {...} settings give, or its defaults
+function setObjectColors(o, op, ch0, dch0) {
+  if (!ch0) return;
+  o.ch0 = ch0; o.dch0 = dch0;
+  o.ch = chId(op.color) || ch0;
+  if (dch0) o.dch = chId(op.detail) || dch0;
 }
 
 // --- Edit Group settings: editor layers, drawing order, and the Extra tab ---
@@ -621,27 +679,36 @@ class Player {
     return boxPoly(b.l, b.t, b.r, b.b);
   }
 
+  // One step of flying: move, then meet whatever is near (in the same order as CMU)
   Update() {
     if (!this.alive) return;
-
+    const prevTop = this.hb.bottom - this.hb.size, prevBottom = this.hb.bottom;
     const h = gridSize * this.sizeScale;
-    const prevTop = this.hb.bottom - this.hb.size;
-    const prevBottom = this.hb.bottom;
-
     this.updatePosition();
     this.updateVelocity();
+    this.stayInsideStage(h);
+    const sx = shipCenterX + scrollX;   // where the ship is in the level
+    const near = world.near(sx);
+    this.landOnBlocks(near, sx, prevTop, prevBottom);
+    if (!upInput && !this.onGround) this.landingHelp(near, sx);
+    this.crashIntoBlocks(near, sx);
+    this.crashIntoHazards(near, sx);
+    for (const obj of near) if (obj.kind === 'portal' && hitsShape(this.hitPoly(sx), obj.hit)) applyPortal(obj);
+    for (const obj of near) if (obj.kind === 'transporter' && hitsShape(this.hitPoly(sx), obj.hit)) touch(obj);
+  }
 
+  // The floor and the ceiling, and the top speed
+  stayInsideStage(h) {
     if (this.y < 100) { this.y = 100; this.vy = 0; }
     if (this.y > 300 - h) { this.y = 300 - h; this.vy = 0; }
     if (this.vy > this.maxSpeed) this.vy = this.maxSpeed;
     if (this.vy < -this.maxSpeed) this.vy = -this.maxSpeed;
-
     this.onGround = (this.y <= 100 || this.y >= 300 - h);
     this.syncHitbox();
+  }
 
-    const sx = shipCenterX + scrollX;   // where the ship is in the level
-    const near = world.near(sx);
-
+  // A block the ship moved into from above or below pushes it back out: it lands on it
+  landOnBlocks(near, sx, prevTop, prevBottom) {
     for (const block of near) {
       if (block.kind !== 'solid') continue;
       const s = this.hitboxAt(sx), b = block.box;
@@ -654,32 +721,39 @@ class Player {
         this.syncHitbox();
       }
     }
+  }
 
-    // Landing help: when not flying up, a ship whose bottom is within landSnap of a block's top
-    // (a little above it, or clipping its corner a little) lands on it. Upside down, the same
-    // for a block's underside. Makes platforms easier to land on.
-    if (!upInput && !this.onGround) {
-      const s = this.hitboxAt(sx);
-      let best = null, bestGap = Infinity;
-      for (const block of near) {
-        if (block.kind !== 'solid') continue;
-        const b = block.box;
-        if (s.r <= b.l || s.l >= b.r) continue;
-        const gap = this.gravity === 1 ? b.t - s.b : s.t - b.b;   // > 0: just above it, < 0: a little inside it
-        if (Math.abs(gap) <= landSnap && Math.abs(gap) < Math.abs(bestGap)) { best = block; bestGap = gap; }
-      }
-      if (best) {
-        const oldY = this.y;
-        this.y += this.gravity === 1 ? -bestGap : bestGap;
-        this.syncHitbox();
-        const t = this.hitboxAt(sx);   // never snap into another block (tight corridors)
-        if (near.some(o => o.kind === 'solid' && t.r > o.box.l && t.l < o.box.r && t.b > o.box.t + epsilon && t.t < o.box.b - epsilon)) {
-          this.y = oldY; this.syncHitbox();
-        } else { this.vy = 0; this.onGround = true; }
-      }
+  // Landing help: when not flying up, a ship whose bottom is within landSnap of a block's top
+  // (a little above it, or clipping its corner a little) lands on it. Upside down, the same
+  // for a block's underside. Makes platforms easier to land on.
+  landingHelp(near, sx) {
+    const [best, gap] = this.closestLanding(near, sx);
+    if (!best) return;
+    const oldY = this.y;
+    this.y += this.gravity === 1 ? -gap : gap;
+    this.syncHitbox();
+    if (this.insideBlock(near, sx)) { this.y = oldY; this.syncHitbox(); }   // never snap into another block (tight corridors)
+    else { this.vy = 0; this.onGround = true; }
+  }
+  closestLanding(near, sx) {
+    const s = this.hitboxAt(sx);
+    let best = null, bestGap = Infinity;
+    for (const block of near) {
+      if (block.kind !== 'solid') continue;
+      const b = block.box;
+      if (s.r <= b.l || s.l >= b.r) continue;
+      const gap = this.gravity === 1 ? b.t - s.b : s.t - b.b;   // > 0: just above it, < 0: a little inside it
+      if (Math.abs(gap) <= landSnap && Math.abs(gap) < Math.abs(bestGap)) { best = block; bestGap = gap; }
     }
+    return [best, bestGap];
+  }
+  insideBlock(near, sx) {
+    const t = this.hitboxAt(sx);
+    return near.some(o => o.kind === 'solid' && t.r > o.box.l && t.l < o.box.r && t.b > o.box.t + epsilon && t.t < o.box.b - epsilon);
+  }
 
-    // solidHitbox: 0.3 * gridSize square in the middle of the hitbox
+  // solidHitbox: a 0.3 * gridSize square in the middle of the hitbox. A block that reaches it crashes the ship.
+  crashIntoBlocks(near, sx) {
     const half = gridSize * 0.3 / 2;
     const cy = this.hb.bottom - this.hb.size / 2;
     for (const block of near) {
@@ -687,23 +761,14 @@ class Player {
       const b = block.box;
       if (sx + half > b.l && sx - half < b.r && cy + half > b.t && cy - half < b.b) this.Die();
     }
+  }
 
+  // Spikes, thorn pits and saws: both the hitbox and the turned hitbox count
+  crashIntoHazards(near, sx) {
     const hitPoly = this.hitPoly(sx);
     const rotPoly = rotatedRect(sx, this.rot.cy, this.rot.w, this.rot.w, this.rot.angle);
     for (const obj of near) {
-      if (obj.kind === 'hazard') {
-        if (hitsShape(hitPoly, obj.hit) || hitsShape(rotPoly, obj.hit)) this.Die();
-      }
-    }
-    for (const obj of near) {
-      if (obj.kind === 'portal') {
-        if (hitsShape(this.hitPoly(sx), obj.hit)) applyPortal(obj);
-      }
-    }
-    for (const obj of near) {
-      if (obj.kind === 'transporter') {
-        if (hitsShape(this.hitPoly(sx), obj.hit)) touch(obj);
-      }
+      if (obj.kind === 'hazard' && (hitsShape(hitPoly, obj.hit) || hitsShape(rotPoly, obj.hit))) this.Die();
     }
   }
 
