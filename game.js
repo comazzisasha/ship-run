@@ -1132,19 +1132,25 @@ function loadBackground() {
   loadStageImage(GROUND_IMG, GROUND_FILES);
 }
 
+// The background or ground picture already tinted with its color. Tinting the
+// picture once is much cheaper than tinting the whole screen every frame. Only the
+// last color is kept: it changes only while a color trigger fades.
+function tintedStage(slot, rgb) {
+  const css = rgbCss(rgb);
+  if (!slot.tint || slot.tint.im !== slot.im || slot.tint.css !== css) slot.tint = { im: slot.im, css, c: tintCanvas(slot.im, css) };
+  return slot.tint.c;
+}
+
 // The background takes the BG color (a little darker at the top), the floor and
 // ceiling take the GROUND color and their edge line the LINE color.
 // With Geometry Dash art the background picture is drawn instead, moved left by
 // scroll * BG_SPEED (scroll in level pixels, size = how big one picture is drawn).
 const rgbCss = (c, k = 1) => `rgb(${Math.round(c[0] * k)},${Math.round(c[1] * k)},${Math.round(c[2] * k)})`;
 function drawSky(ctx, w, h, bg = CH_DEFAULT[CH.BG], scroll = 0, size = h) {
-  const im = settings.art === 'gd' && BG_IMG.im;
+  const im = settings.art === 'gd' && BG_IMG.im && tintedStage(BG_IMG, bg);
   if (im && size > 0) {
     const off = ((scroll * BG_SPEED * size / 400) % size + size) % size;
     for (let x = -off; x < w; x += size) ctx.drawImage(im, x, h - size, size + 0.5, size);
-    ctx.globalCompositeOperation = 'multiply';
-    ctx.fillStyle = rgbCss(bg); ctx.fillRect(0, 0, w, h);
-    ctx.globalCompositeOperation = 'source-over';
     return;
   }
   const d = CH_DEFAULT[CH.BG], plain = bg.every((v, i) => Math.round(v) === d[i]);
@@ -1153,7 +1159,7 @@ function drawSky(ctx, w, h, bg = CH_DEFAULT[CH.BG], scroll = 0, size = h) {
 }
 
 function drawStage(ctx, x0, x1, yTop, yBot, ground = CH_DEFAULT[CH.GROUND], line = [255, 255, 255]) {
-  const im = settings.art === 'gd' && GROUND_IMG.im;
+  const im = settings.art === 'gd' && GROUND_IMG.im && tintedStage(GROUND_IMG, ground);
   if (im) {
     // Ground squares in level coordinates, so they move with the level and repeat.
     // The floor starts at y = 300 going down; the ceiling is the same picture
@@ -1167,11 +1173,6 @@ function drawStage(ctx, x0, x1, yTop, yBot, ground = CH_DEFAULT[CH.GROUND], line
         for (let x = sx; x < x1; x += g) ctx.drawImage(im, x, y, g + 0.5, g + 0.5);
       ctx.restore();
     }
-    ctx.globalCompositeOperation = 'multiply';
-    ctx.fillStyle = rgbCss(ground);
-    if (yTop < 100) ctx.fillRect(x0, yTop, x1 - x0, 100 - yTop);
-    if (yBot > 300) ctx.fillRect(x0, 300, x1 - x0, yBot - 300);
-    ctx.globalCompositeOperation = 'source-over';
   } else {
     ctx.fillStyle = rgbCss(ground);
     ctx.fillRect(x0, yTop, x1 - x0, 100 - yTop);
