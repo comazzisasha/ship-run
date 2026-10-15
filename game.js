@@ -1999,7 +1999,7 @@ function respawn() {
   game.attempts++;
   game.attemptX = scrollX + shipCenterX + 150;
   game.prevScroll = scrollX; game.prevY = Me.y; game.prevTheta = Me.theta;
-  game.nc = { steps: 0, dead: 0, deaths: 0, was: false };
+  game.nc = { steps: 0, dead: 0, deaths: 0, was: false }; game.clicks = 0;
   game.coinPart = world.partAt(shipCenterX + scrollX); game.cheated = cheatsOn(); game.stage = null;
   game.cpPending = null; game.cpNext = game.time + CP_EVERY;
   hideOverlay();
