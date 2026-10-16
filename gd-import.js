@@ -44,6 +44,21 @@
   const SLAB = ranges(40, [62, 66], 68, [170, 173], 192, 194, 215, 369, 370, 655, 656, [662, 664], 723, 735, 891,
     [1079, 1081], [1096, 1098], [1903, 1905]);
   const INVIS_BLOCK = 146, INVIS_SLAB = ranges(147, 204);
+  // Block sets: each has a square, a top, an outer corner, an inner corner, an inner square,
+  // a top pillar and a pillar. They come over like Ship Run's own grid blocks: the grid
+  // picture plus the outline pieces that are solid where its white edges are, and the
+  // inner square as a grid block with no hitbox.
+  //   [square, top, outer corner, inner corner, inner, top pillar, pillar] (0 = the set has none)
+  const BLOCK_SETS = [
+    [1, 2, 3, 4, 5, 6, 7], [69, 70, 71, 72, 73, 74, 75], [76, 77, 78, 0, 80, 81, 82], [90, 91, 92, 93, 94, 95, 96],
+    [116, 117, 118, 119, 120, 121, 122], [207, 208, 209, 210, 211, 212, 213], [247, 248, 249, 250, 251, 252, 253],
+    [255, 256, 257, 258, 259, 260, 261], [263, 264, 265, 0, 266, 267, 268], [269, 270, 271, 272, 0, 274, 275],
+  ];
+  // Each part: [grid picture, outline piece] (piece 12 is the column: lines on both sides)
+  const SET_PARTS = [null, ['square_02_001', 2], ['square_03_001', 3], ['square_04_001', 6], 'inner', ['square_06_001', 4], ['square_07_001', 12]];
+  const BLOCK_PART = {};
+  for (const set of BLOCK_SETS) set.forEach((id, i) => { if (id && SET_PARTS[i]) BLOCK_PART[id] = SET_PARTS[i]; });
+  BLOCK_PART[83] = ['square_08_001', 1];        // the grid square with all four edges
 
   // Spikes: [Ship Run type, design]
   const SPIKES = {
@@ -368,7 +383,9 @@
         else { leaveOut('cut'); continue; }
       }
       const inCut = !sectionAt(o.x);
-      const Xv = inCut ? round2(s.out0 / SQ + START_COL - 1) : X(o.x, s), Yv = Y(o.y, s);
+      // Geometry Dash nudges some objects a couple of units off the grid; those snap back onto it
+      const snap = v => Math.abs(v - Math.round(v)) < 0.1 ? Math.round(v) : v;
+      const Xv = inCut ? round2(s.out0 / SQ + START_COL - 1) : snap(X(o.x, s)), Yv = snap(Y(o.y, s));
       const rot = num(p[6]), flipY = p[5] === '1', flipX = p[4] === '1';
       const sc = num(p[32], 1), sx = Math.abs(num(p[128], sc)), sy = Math.abs(num(p[129], sc));
       const angle = normDeg(-(rot + (flipY ? 180 : 0)));               // Ship Run turns the other way
@@ -413,16 +430,27 @@
       }
       if (id === END_TRIGGER) { endCol = Math.round(Xv); continue; }
 
+      const part = BLOCK_PART[id];
+      if (Array.isArray(part)) {
+        // a block set's edge piece: the grid picture, and the outline piece for its hitbox
+        const gx = Math.round(Xv), gy = Math.round(Yv);
+        if (!inside(gy)) { report.outside++; continue; }
+        const turn = normDeg(Math.round(angle / 90) * 90), flip = flipX !== flipY;
+        const deco = ['Deco', gx, gy, turn, part[0]], line = ['OutlineBlock', gx, gy, turn, part[1]];
+        if (flip) { deco.push(1); line.push(1); }
+        add(withOpts(deco)); add(withOpts(line));
+        continue;
+      }
       if (SOLID.has(id) || id === INVIS_BLOCK) {
-        const t = id === INVIS_BLOCK ? 'InvisibleBlock' : 'Block';
-        // a stretched block becomes several blocks; one much smaller than a square is left out
+        const t = part === 'inner' ? 'GridBlock' : id === INVIS_BLOCK ? 'InvisibleBlock' : 'Block';
+        // A block covers the grid squares its edges are on, so a stretched block becomes
+        // several blocks lined up with the grid. One much smaller than a square is left out.
         let w = sx, h = sy;
         if (Math.round(Math.abs(rot) / 90) % 2) [w, h] = [h, w];
         if (w < 0.75 || h < 0.75) { report.small++; continue; }
-        const nw = Math.max(1, Math.round(w)), nh = Math.max(1, Math.round(h));
+        const cells = (c, size) => { const a = Math.round(c - 0.5 - size / 2), b = Math.round(c - 0.5 + size / 2); const out = []; for (let k = a + 1; k <= Math.max(b, a + 1); k++) out.push(k); return out; };
         let any = false;
-        for (let i = 0; i < nw; i++) for (let j = 0; j < nh; j++) {
-          const bx = round2(Xv + i - (nw - 1) / 2), by = round2(Yv + j - (nh - 1) / 2);
+        for (const bx of cells(Xv, w)) for (const by of cells(Yv, h)) {
           if (!inside(by)) continue;
           add(withOpts([t, bx, by])); any = true;
         }
@@ -452,7 +480,9 @@
         if (design) d.push(design);
         add(withOpts(d));
       } else if (id in PITS) {
-        const d = ['ThornPit', Xv, Yv, angle];
+        // Geometry Dash keeps a thorn pit's position half a square below its grid square
+        const a = angle * Math.PI / 180;
+        const d = ['ThornPit', snap(round2(Xv - 0.5 * Math.sin(a))), snap(round2(Yv + 0.5 * Math.cos(a))), angle];
         if (PITS[id]) d.push(PITS[id]);
         add(withOpts(d));
       } else if (SAWS[id]) {
