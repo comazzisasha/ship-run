@@ -55,6 +55,10 @@ A `.gmd` is Geometry Dash's own level save, an XML plist: `k2` is the name, `k5`
 and `k4` the level, which is base64 of gzip of `header;object;object;...`. Each object is
 `key,value,...` pairs (1 = object ID, 2/3 = x/y in units of 30 per square, 6 = rotation, ...).
 
+Block sets (grid, bricks, colored ...) come over like Ship Run's own grid blocks: the grid picture plus
+the outline piece that is solid along its white edges, and inner squares as grid blocks with no hitbox.
+Pillars use the outline column (outline piece 12, two lines on opposite sides), which is also in the editor.
+
 What comes over: blocks, spikes, thorn pits, saws, speed / gravity / size / teleport portals,
 yellow pads and orbs, coins, color and alpha triggers, colors and groups. Only the ship parts
 of a level come over: cube, ball, UFO, wave, robot, spider and swing parts are cut out and the

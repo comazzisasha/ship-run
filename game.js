@@ -402,8 +402,10 @@ const OUTLINE_PIECES = {
   9:  ['blockOutline_09_001', 1 - 1.5 / 60, [[0, 1 - LW, 1, 1]]],
   10: ['invisibleOutline_01_001', 1 - 1.5 / 60, [[0, 1 - LW, 1, 1]], true],
   11: ['invisibleOutline_b_01_001', 1 - 3 / 60, [[0, 1 - 2 * LW, 1, 1]], true],
+  // a column: the left line of piece 5 and its mirror image on the right (drawn twice, see 'both')
+  12: ['blockOutline_05_001', 0.5, [[0, 0, LW, 1], [1 - LW, 0, 1, 1]], false, 'both'],
 };
-const OUTLINE_MAX = 11;
+const OUTLINE_MAX = 12;
 // Deco that is placed off-centre in its square (slabs sit at the top, fake spikes on the floor)
 const DECO_ANCHOR = (window.GD_SPRITES && window.GD_SPRITES.anchor) || {};
 // Default channels: [main, detail]. Thorn pits and saws are black, like Geometry Dash.
@@ -1316,7 +1318,10 @@ function drawObjectArt(ctx, o, pass, cols) {
     case 'OutlineBlock': {
       const P = OUTLINE_PIECES[o.piece], a = o.fade ? fadeAlpha(o) : 1;
       if (a <= 0.01) break;
-      if (drawSprInCell(ctx, P[0], o, 0.5, P[1], { flipX: o.flip, color: main, alpha: a })) break;
+      if (drawSprInCell(ctx, P[0], o, 0.5, P[1], { flipX: o.flip, color: main, alpha: a })) {
+        if (P[4] === 'both') drawSprInCell(ctx, P[0], o, 0.5, P[1], { flipX: !o.flip, color: main, alpha: a });
+        break;
+      }
       ctx.save(); ctx.globalAlpha *= a; ctx.fillStyle = ctx.strokeStyle = cssOf(main);
       if (o.piece === 1) { ctx.lineWidth = 1.2; ctx.strokeRect(o.x + 0.6, o.y - g + 0.6, g - 1.2, g - 1.2); }
       else for (const { line: b } of o.parts) {       // each line as thick as piece 1's outline, kept inside the square
@@ -2754,7 +2759,7 @@ async function copyText(text, area) {
 // is listed in catalog.js for later.
 const DECO_LISTS = { blocks: [], details: [], slopes: [], fakeSpikes: [], ...((window.GD_SPRITES && window.GD_SPRITES.deco) || {}) };
 const PALETTE = [
-  { name: 'BLOCKS', items: [['Block'], ['GridBlock'], ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => ['OutlineBlock', n]),
+  { name: 'BLOCKS', items: [['Block'], ['GridBlock'], ...[1, 2, 3, 4, 5, 12, 6, 7, 8, 9].map(n => ['OutlineBlock', n]),
     ['InvisibleBlock'], ['OutlineBlock', 10], ['OutlineBlock', 11]] },
   { name: 'SPIKES', items: [['Spike'], ['ShortSpike'], ['SmallSpike'], ['TinySpike'], ['ThornPit'],
     ['FadeSpike'], ['FadeShortSpike'], ['FadeSmallSpike'], ['FadeTinySpike'],
@@ -2795,7 +2800,7 @@ function itemLabel(tpl) {
       return designName(v).replace(/ \d+$/, '') + ' ' + (v === 'gdh_spike_04' ? 'mini spike' : shape);
     }
     case 'ThornPit': return v ? designName(v) : 'Thorn pit';
-    case 'OutlineBlock': return v === 10 || v === 11 ? 'Invisible line ' + (v - 9) : 'Outline block ' + v;
+    case 'OutlineBlock': return v === 10 || v === 11 ? 'Invisible line ' + (v - 9) : v === 12 ? 'Outline column' : 'Outline block ' + v;
     case 'InvisibleBlock': return 'Invisible block';
     case 'Coin': return 'User coin';
     case 'ColorTrigger': return 'Color trigger';
